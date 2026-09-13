@@ -41,6 +41,119 @@ jobs:
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           chmod +x gradlew
 
+      - name: Change application ID
+        working-directory: source/YunX-1.2.6/YunX-1.2.6
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("app/build.gradle.kts")
+          if not path.exists():
+              path = Path("app/build.gradle")
+
+          text = path.read_text(encoding="utf-8")
+          text, count = re.subn(
+              r"""(\bapplicationId\s*(?:=\s*)?)(["'])[^"']+\2""",
+              lambda m: m.group(1) + '"com.xingchen.assistant"',
+              text,
+          )
+
+          if count != 1:
+              raise RuntimeError(
+                  "未找到唯一的 applicationId，请检查构建文件"
+              )
+
+          path.write_text(text, encoding="utf-8")
+          print("Application ID changed to com.xingchen.assistant")
+          PY
+
+      - name: Rename app
+        working-directory: source/YunX-1.2.6/YunX-1.2.6
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          android_uri = "http://schemas.android.com/apk/res/android"
+          android = "{" + android_uri + "}"
+          ET.register_namespace("android", android_uri)
+
+          res = Path("app/src/main/res")
+
+          for path in res.glob("values*/*.xml"):
+              tree = ET.parse(path)
+              changed = False
+
+              for item in tree.getroot().findall("string"):
+                  if item.get("name") == "app_name":
+                      for child in list(item):
+                          item.remove(child)
+                      item.text = "星辰助手"
+                      changed = True
+
+              if changed:
+                  tree.write(
+                      path,
+                      encoding="utf-8",
+                      xml_declaration=True,
+                  )
+
+          manifest = Path("app/src/main/AndroidManifest.xml")
+          tree = ET.parse(manifest)
+          app = tree.getroot().find("application")
+
+          if app is None:
+              raise RuntimeError("Application not found in manifest")
+
+          app.set(android + "label", "星辰助手")
+
+          for tag in ("activity", "activity-alias"):
+              for activity in app.findall(tag):
+                  launcher = any(
+                      category.get(android + "name")
+                      == "android.intent.category.LAUNCHER"
+                      for category in activity.findall(
+                          "intent-filter/category"
+                      )
+                  )
+                  if launcher:
+                      activity.set(android + "label", "星辰助手")
+
+          tree.write(
+              manifest,
+              encoding="utf-8",
+              xml_declaration=True,
+          )
+
+          ET.parse(manifest)
+          print("App renamed to 星辰助手")
+          PY
+
+      - name: Build APK
+        working-directory: source/YunX-1.2.6/YunX-1.2.6
+        run: ./gradlew --no-daemon --console=plain clean :app:assembleDebug
+
+      - name: Verify and collect APK
+        run: |
+          apk="source/YunX-1.2.6/YunX-1.2.6/app/build/outputs/apk/debug/app-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
+          mkdir -p output
+          cp "$apk" "output/星辰助手-1.2.6.apk"
+
+      - name: Save APK for download
+        uses: actions/upload-artifact@v7
+        with:
+          name: XingChen-APK
+          path: output/*.apk
+          if-no-files-found: error
+          retention-days: 7      - name: Prepare project
+        working-directory: source/YunX-1.2.6/YunX-1.2.6
+        run: |
+          sed -i '/^[[:space:]]*android.aapt2FromMavenOverride[[:space:]]*=/d' gradle.properties
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+
       - name: Rename app
         working-directory: source/YunX-1.2.6/YunX-1.2.6
         run: |
