@@ -1,0 +1,106 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      YUNX_USE_MIRROR: "false"
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install build tools
+        run: sdkmanager "platforms;android-36" "build-tools;35.0.0"
+
+      - name: Extract source
+        run: |
+          unzip -q YunX-1.2.6.zip -d source
+          test -f source/YunX-1.2.6/YunX-1.2.6/gradlew
+
+      - name: Prepare project
+        working-directory: source/YunX-1.2.6/YunX-1.2.6
+        run: |
+          sed -i '/^[[:space:]]*android.aapt2FromMavenOverride[[:space:]]*=/d' gradle.properties
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+
+      - name: Rename app
+        working-directory: source/YunX-1.2.6/YunX-1.2.6
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          android = "{http://schemas.android.com/apk/res/android}"
+          ET.register_namespace("android", android)
+          res = Path("app/src/main/res")
+
+          for path in res.glob("values*/*.xml"):
+              tree = ET.parse(path)
+              changed = False
+              for item in tree.getroot().findall("string"):
+                  if item.get("name") == "app_name":
+                      for child in list(item):
+                          item.remove(child)
+                      item.text = "星辰助手"
+                      changed = True
+              if changed:
+                  tree.write(path, encoding="utf-8", xml_declaration=True)
+
+          manifest = Path("app/src/main/AndroidManifest.xml")
+          tree = ET.parse(manifest)
+          app = tree.getroot().find("application")
+          if app is None:
+              raise RuntimeError("Application not found in manifest")
+          app.set(android + "label", "星辰助手")
+
+          for tag in ("activity", "activity-alias"):
+              for activity in app.findall(tag):
+                  launcher = any(
+                      category.get(android + "name") ==
+                      "android.intent.category.LAUNCHER"
+                      for category in activity.findall(
+                          "intent-filter/category"
+                      )
+                  )
+                  if launcher:
+                      activity.set(android + "label", "星辰助手")
+
+          tree.write(manifest, encoding="utf-8", xml_declaration=True)
+          PY
+
+      - name: Build APK
+        working-directory: source/YunX-1.2.6/YunX-1.2.6
+        run: ./gradlew --no-daemon --console=plain clean :app:assembleDebug
+
+      - name: Verify and collect APK
+        run: |
+          apk="source/YunX-1.2.6/YunX-1.2.6/app/build/outputs/apk/debug/app-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
+          mkdir -p output
+          cp "$apk" output/星辰助手-1.2.6.apk
+
+      - name: Save APK for download
+        uses: actions/upload-artifact@v7
+        with:
+          name: XingChen-APK
+          path: output/*.apk
+          if-no-files-found: error
+          retention-days: 7
