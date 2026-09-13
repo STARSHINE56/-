@@ -48,34 +48,44 @@ jobs:
           from pathlib import Path
           import xml.etree.ElementTree as ET
 
-          android = "{http://schemas.android.com/apk/res/android}"
-          ET.register_namespace("android", android)
+          android_uri = "http://schemas.android.com/apk/res/android"
+          android = "{" + android_uri + "}"
+          ET.register_namespace("android", android_uri)
+
           res = Path("app/src/main/res")
 
           for path in res.glob("values*/*.xml"):
               tree = ET.parse(path)
               changed = False
+
               for item in tree.getroot().findall("string"):
                   if item.get("name") == "app_name":
                       for child in list(item):
                           item.remove(child)
                       item.text = "星辰助手"
                       changed = True
+
               if changed:
-                  tree.write(path, encoding="utf-8", xml_declaration=True)
+                  tree.write(
+                      path,
+                      encoding="utf-8",
+                      xml_declaration=True,
+                  )
 
           manifest = Path("app/src/main/AndroidManifest.xml")
           tree = ET.parse(manifest)
           app = tree.getroot().find("application")
+
           if app is None:
               raise RuntimeError("Application not found in manifest")
+
           app.set(android + "label", "星辰助手")
 
           for tag in ("activity", "activity-alias"):
               for activity in app.findall(tag):
                   launcher = any(
-                      category.get(android + "name") ==
-                      "android.intent.category.LAUNCHER"
+                      category.get(android + "name")
+                      == "android.intent.category.LAUNCHER"
                       for category in activity.findall(
                           "intent-filter/category"
                       )
@@ -83,7 +93,14 @@ jobs:
                   if launcher:
                       activity.set(android + "label", "星辰助手")
 
-          tree.write(manifest, encoding="utf-8", xml_declaration=True)
+          tree.write(
+              manifest,
+              encoding="utf-8",
+              xml_declaration=True,
+          )
+
+          ET.parse(manifest)
+          print("App renamed to 星辰助手")
           PY
 
       - name: Build APK
@@ -95,7 +112,7 @@ jobs:
           apk="source/YunX-1.2.6/YunX-1.2.6/app/build/outputs/apk/debug/app-debug.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
           mkdir -p output
-          cp "$apk" output/星辰助手-1.2.6.apk
+          cp "$apk" "output/星辰助手-1.2.6.apk"
 
       - name: Save APK for download
         uses: actions/upload-artifact@v7
