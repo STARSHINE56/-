@@ -1,1 +1,7 @@
-<string name="app_name">星辰助手</string>
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">星辰助手</string>
+    <string name="settings_about_app">关于%1$s</string>
+    <string name="settings_battery_optimization_message">为确保锁屏后下载不中断，建议将%1$s加入「忽略电池优化」白名单。是否前往系统设置？</string>
+    <string name="platform_mobile_cloud">移动云盘</string>
+</resources>
