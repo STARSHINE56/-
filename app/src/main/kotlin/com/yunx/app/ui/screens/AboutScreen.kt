@@ -200,7 +200,7 @@ private fun AppHeader(versionName: String, versionCode: Int) {
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "YunX · v$versionName ($versionCode)",
+            text = "星辰助手 · v$versionName ($versionCode)",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -531,7 +531,7 @@ private fun GitHubCard(context: android.content.Context) {
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = "点击跳转",
+                    text = "查看项目源码",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
