@@ -1,5 +1,8 @@
 package com.yunx.app.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -28,6 +31,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,14 +50,15 @@ import androidx.compose.ui.unit.sp
 import com.yunx.app.R
 
 /**
- * 首次启动引导页：介绍星辰助手（免费）+ 功能特性 + 免责声明。
- * Material3 风格：渐变图标 + 功能列表 + 彩色免费卡 + 免责卡 + 底部主操作。
+ * 首次启动引导页：应用介绍、功能特性、免责声明和开源仓库入口。
  */
 @Composable
 fun OnboardingScreen(
     onFinish: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -62,10 +68,15 @@ fun OnboardingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(start = 24.dp, end = 24.dp, top = 56.dp, bottom = 120.dp),
+                .padding(
+                    start = 24.dp,
+                    end = 24.dp,
+                    top = 56.dp,
+                    bottom = 120.dp
+                ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ---------- 顶部：渐变图标 + 名称 + 标语 ----------
+            // 顶部图标
             Box(
                 modifier = Modifier
                     .size(96.dp)
@@ -89,13 +100,17 @@ fun OnboardingScreen(
                     contentScale = ContentScale.Crop
                 )
             }
+
             Spacer(modifier = Modifier.height(18.dp))
+
             Text(
                 text = "星辰助手",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.SemiBold
             )
+
             Spacer(modifier = Modifier.height(6.dp))
+
             Text(
                 text = "网盘分享链接解析与高速下载",
                 style = MaterialTheme.typography.bodyLarge,
@@ -104,22 +119,25 @@ fun OnboardingScreen(
 
             Spacer(modifier = Modifier.height(36.dp))
 
-            // ---------- 功能特性 ----------
+            // 功能特性
             OnboardingFeature(
                 icon = Icons.Outlined.Link,
                 title = "一键解析分享链接",
                 description = "夸克 / UC / 迅雷 / 百度 / 移动 / 123 分享链接自动识别，登录网盘账号后即可解析与下载"
             )
+
             OnboardingFeature(
                 icon = Icons.Outlined.Speed,
                 title = "高速分片下载",
                 description = "多线程并发 + 断点续传，充分利用带宽"
             )
+
             OnboardingFeature(
                 icon = Icons.Outlined.Storage,
                 title = "多平台支持",
                 description = "一个应用管理多个网盘账号，统一解析下载入口"
             )
+
             OnboardingFeature(
                 icon = Icons.Outlined.Lock,
                 title = "隐私安全",
@@ -128,7 +146,7 @@ fun OnboardingScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // ---------- 免费卡 ----------
+            // 免费卡片
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
@@ -143,7 +161,8 @@ fun OnboardingScreen(
                     Surface(
                         modifier = Modifier.size(40.dp),
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.12f)
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                            .copy(alpha = 0.12f)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -154,7 +173,9 @@ fun OnboardingScreen(
                             )
                         }
                     }
+
                     Spacer(modifier = Modifier.width(14.dp))
+
                     Column {
                         Text(
                             text = "完全免费",
@@ -170,9 +191,10 @@ fun OnboardingScreen(
                     }
                 }
             }
+
             Spacer(modifier = Modifier.height(16.dp))
 
-            // ---------- 免责声明 ----------
+            // 免责声明
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
@@ -190,7 +212,9 @@ fun OnboardingScreen(
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
                     Spacer(modifier = Modifier.width(10.dp))
+
                     Text(
                         text = "免责声明：本应用仅供个人学习与技术交流，请勿用于商业用途。" +
                             "下载内容版权归原作者所有，请于下载后 24 小时内删除。" +
@@ -201,10 +225,46 @@ fun OnboardingScreen(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 开源仓库按钮
+            OutlinedButton(
+                onClick = {
+                    val intent = Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://github.com/STARSHINE56/-")
+                    )
+                    try {
+                        context.startActivity(intent)
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        Toast.makeText(
+                            context,
+                            "未找到可以打开链接的应用，请安装浏览器后重试",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Link,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "开源仓库",
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // ---------- 底部操作 ----------
+        // 底部固定操作
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -219,13 +279,16 @@ fun OnboardingScreen(
                     .padding(horizontal = 24.dp, vertical = 16.dp)
                     .height(52.dp)
             ) {
-                Text("开始使用", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "开始使用",
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
         }
     }
 }
 
-/** 功能特性条目：圆形图标底 + 标题 + 描述 */
+/** 功能特性条目：圆形图标、标题和描述 */
 @Composable
 private fun OnboardingFeature(
     icon: ImageVector,
@@ -252,7 +315,9 @@ private fun OnboardingFeature(
                 )
             }
         }
+
         Spacer(modifier = Modifier.width(16.dp))
+
         Column {
             Text(
                 text = title,
