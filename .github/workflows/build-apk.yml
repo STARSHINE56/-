@@ -2,6 +2,18 @@ name: Build APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "*.gradle"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+      - "gradlew.bat"
+      - ".github/workflows/**"
 
 permissions:
   contents: read
@@ -10,6 +22,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     env:
       YUNX_USE_MIRROR: "false"
 
@@ -29,30 +42,46 @@ jobs:
       - name: Install build tools
         run: sdkmanager "platforms;android-36" "build-tools;35.0.0"
 
-      - name: Extract source
+      - name: Restore original signing key
         run: |
-          unzip -q YunX-1.2.6.zip -d source
-          test -f source/YunX-1.2.6/YunX-1.2.6/gradlew
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          with zipfile.ZipFile("YunX-1.2.6.zip") as archive:
+              matches = [
+                  name for name in archive.namelist()
+                  if name.endswith("/debug.keystore")
+                  or name == "debug.keystore"
+              ]
+
+              if len(matches) != 1:
+                  raise RuntimeError("无法找到唯一的原始 debug.keystore")
+
+              Path("debug.keystore").write_bytes(
+                  archive.read(matches[0])
+              )
+
+          print("已恢复原始签名文件")
+          PY
 
       - name: Prepare project
-        working-directory: source/YunX-1.2.6/YunX-1.2.6
         run: |
+          test -f gradlew
+          test -f app/build.gradle.kts
           sed -i '/^[[:space:]]*android.aapt2FromMavenOverride[[:space:]]*=/d' gradle.properties
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           chmod +x gradlew
 
       - name: Change application ID
-        working-directory: source/YunX-1.2.6/YunX-1.2.6
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
           path = Path("app/build.gradle.kts")
-          if not path.exists():
-              path = Path("app/build.gradle")
-
           text = path.read_text(encoding="utf-8")
+
           text, count = re.subn(
               r"""(\bapplicationId\s*(?:=\s*)?)(["'])[^"']+\2""",
               lambda m: m.group(1) + '"com.xingchen.assistant"',
@@ -66,12 +95,23 @@ jobs:
           print("Application ID: com.xingchen.assistant")
           PY
 
-      - name: Rename app
-        working-directory: source/YunX-1.2.6/YunX-1.2.6
+      - name: Rename application and visible text
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import xml.etree.ElementTree as ET
+
+          # 替换源码和资源中的中文名称。
+          for path in Path("app/src").rglob("*"):
+              if path.is_file() and path.suffix in {
+                  ".kt", ".java", ".xml", ".html", ".json", ".txt"
+              }:
+                  text = path.read_text(encoding="utf-8")
+                  if "云析" in text:
+                      path.write_text(
+                          text.replace("云析", "星辰助手"),
+                          encoding="utf-8",
+                      )
 
           uri = "http://schemas.android.com/apk/res/android"
           android = "{" + uri + "}"
@@ -80,14 +120,20 @@ jobs:
           for path in Path("app/src/main/res").glob("values*/*.xml"):
               tree = ET.parse(path)
               changed = False
+
               for item in tree.getroot().findall("string"):
                   if item.get("name") == "app_name":
                       for child in list(item):
                           item.remove(child)
                       item.text = "星辰助手"
                       changed = True
+
               if changed:
-                  tree.write(path, encoding="utf-8", xml_declaration=True)
+                  tree.write(
+                      path,
+                      encoding="utf-8",
+                      xml_declaration=True,
+                  )
 
           manifest = Path("app/src/main/AndroidManifest.xml")
           tree = ET.parse(manifest)
@@ -103,26 +149,32 @@ jobs:
                   launcher = any(
                       category.get(android + "name")
                       == "android.intent.category.LAUNCHER"
-                      for category in activity.findall("intent-filter/category")
+                      for category in activity.findall(
+                          "intent-filter/category"
+                      )
                   )
+
                   if launcher:
                       activity.set(android + "label", "星辰助手")
 
-          tree.write(manifest, encoding="utf-8", xml_declaration=True)
+          tree.write(
+              manifest,
+              encoding="utf-8",
+              xml_declaration=True,
+          )
           ET.parse(manifest)
-          print("App renamed to 星辰助手")
+          print("已将应用名称及源码中的云析改为星辰助手")
           PY
 
       - name: Build APK
-        working-directory: source/YunX-1.2.6/YunX-1.2.6
         run: ./gradlew --no-daemon --console=plain clean :app:assembleDebug
 
       - name: Verify and collect APK
         run: |
-          apk="source/YunX-1.2.6/YunX-1.2.6/app/build/outputs/apk/debug/app-debug.apk"
+          apk="app/build/outputs/apk/debug/app-debug.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
           mkdir -p output
-          cp "$apk" "output/星辰助手-1.2.6.apk"
+          cp "$apk" "output/星辰助手.apk"
 
       - name: Save APK for download
         uses: actions/upload-artifact@v7
