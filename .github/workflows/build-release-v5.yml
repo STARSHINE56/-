@@ -3,12 +3,13 @@ name: Build and Release Android v6
 on:
   push:
     branches: [main]
+
   workflow_dispatch:
     inputs:
       version:
-        description: "Version number, for example 1.2.6 (without v)"
+        description: "Version number, for example 1.0.0 (without v)"
         required: true
-        default: "1.2.6"
+        default: "1.0.0"
         type: string
 
 permissions:
@@ -42,15 +43,28 @@ jobs:
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
+
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0"
 
       - name: Test and build
         run: |
           sed -i '/aapt2FromMavenOverride/d' gradle.properties
+
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+
           chmod +x gradlew
-          ./gradlew --no-daemon --console=plain -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" testDebugUnitTest assembleDebug
+
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            testDebugUnitTest \
+            assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
@@ -84,10 +98,12 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           VERSION="${INPUT_VERSION#v}"
+
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid version: $INPUT_VERSION"
             exit 1
           fi
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -102,18 +118,39 @@ jobs:
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
+
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0"
 
       - name: Restore release signing key
         shell: bash
         run: |
-          test -n "$SIGNING_KEY_BASE64" || { echo "SIGNING_KEY_BASE64 secret is missing"; exit 1; }
-          test -n "$RELEASE_STORE_PASSWORD" || { echo "RELEASE_STORE_PASSWORD secret is missing"; exit 1; }
-          test -n "$RELEASE_KEY_ALIAS" || { echo "RELEASE_KEY_ALIAS secret is missing"; exit 1; }
-          test -n "$RELEASE_KEY_PASSWORD" || { echo "RELEASE_KEY_PASSWORD secret is missing"; exit 1; }
+          test -n "$SIGNING_KEY_BASE64" || {
+            echo "SIGNING_KEY_BASE64 secret is missing"
+            exit 1
+          }
+
+          test -n "$RELEASE_STORE_PASSWORD" || {
+            echo "RELEASE_STORE_PASSWORD secret is missing"
+            exit 1
+          }
+
+          test -n "$RELEASE_KEY_ALIAS" || {
+            echo "RELEASE_KEY_ALIAS secret is missing"
+            exit 1
+          }
+
+          test -n "$RELEASE_KEY_PASSWORD" || {
+            echo "RELEASE_KEY_PASSWORD secret is missing"
+            exit 1
+          }
 
           printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > release.keystore
+
           chmod 600 release.keystore
 
           keytool -list \
@@ -128,7 +165,11 @@ jobs:
           VERSION_NAME: ${{ steps.version.outputs.version }}
         run: |
           sed -i '/aapt2FromMavenOverride/d' gradle.properties
+
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+
+          export GRADLE_USER_HOME="$HOME/.gradle"
+
           mkdir -p "$GRADLE_USER_HOME"
 
           {
@@ -140,10 +181,20 @@ jobs:
           } > "$GRADLE_USER_HOME/gradle.properties"
 
           chmod 600 "$GRADLE_USER_HOME/gradle.properties"
+
           chmod +x gradlew
 
       - name: Build signed APK and AAB
-        run: ./gradlew --no-daemon --console=plain -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" clean assembleRelease bundleRelease
+        run: |
+          export GRADLE_USER_HOME="$HOME/.gradle"
+
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            clean \
+            assembleRelease \
+            bundleRelease
 
       - name: Verify signature and collect files
         shell: bash
@@ -153,13 +204,15 @@ jobs:
           APK="app/build/outputs/apk/release/app-release.apk"
           AAB="app/build/outputs/bundle/release/app-release.aab"
 
+          test -f "$APK"
+          test -f "$AAB"
+
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
             --verbose \
             --print-certs \
             "$APK"
 
-          test -f "$AAB"
           mkdir -p output
 
           cp "$APK" "output/XingChen-Assistant-${RELEASE_TAG}.apk"
@@ -184,6 +237,6 @@ jobs:
           else
             gh release create "$RELEASE_TAG" output/* \
               --target "$GITHUB_SHA" \
-              --title "XingChen Assistant $RELEASE_TAG" \
+              --title "星辰助手 $RELEASE_TAG" \
               --generate-notes
           fi
