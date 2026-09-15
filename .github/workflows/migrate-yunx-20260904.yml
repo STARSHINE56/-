@@ -82,6 +82,8 @@ jobs:
             "app/src/main/kotlin/com/yunx/app/ui/screens/UCCoudScreen.kt"
             "app/src/main/kotlin/com/yunx/app/ui/screens/XunleiCloudScreen.kt"
             "app/src/main/kotlin/com/yunx/app/ui/viewmodel/C139CloudViewModel.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/login/Pan123LoginScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/login/WebLoginAutoDetect.kt"
             "app/src/main/kotlin/com/yunx/app/ui/viewmodel/Pan123AccountViewModel.kt"
             "app/src/main/kotlin/com/yunx/app/ui/viewmodel/Pan123CloudViewModel.kt"
           )
