@@ -26,6 +26,7 @@ jobs:
     name: Test and build debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -46,10 +47,10 @@ jobs:
 
       - name: Test and build
         run: |
-          sed -i '/^[[:space:]]*android.aapt2FromMavenOverride[[:space:]]*=/d' gradle.properties
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           chmod +x gradlew
-          ./gradlew --no-daemon --console=plain testDebugUnitTest assembleDebug
+          ./gradlew --no-daemon --console=plain -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" testDebugUnitTest assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
@@ -65,11 +66,13 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     env:
       SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
       RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
       RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
       RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -109,18 +112,25 @@ jobs:
           test -n "$RELEASE_STORE_PASSWORD" || { echo "RELEASE_STORE_PASSWORD secret is missing"; exit 1; }
           test -n "$RELEASE_KEY_ALIAS" || { echo "RELEASE_KEY_ALIAS secret is missing"; exit 1; }
           test -n "$RELEASE_KEY_PASSWORD" || { echo "RELEASE_KEY_PASSWORD secret is missing"; exit 1; }
+
           printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > release.keystore
           chmod 600 release.keystore
-          keytool -list -keystore release.keystore -storepass "$RELEASE_STORE_PASSWORD" -alias "$RELEASE_KEY_ALIAS" >/dev/null
+
+          keytool -list \
+            -keystore release.keystore \
+            -storepass "$RELEASE_STORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" \
+            >/dev/null
 
       - name: Configure release signing
         shell: bash
         env:
           VERSION_NAME: ${{ steps.version.outputs.version }}
         run: |
-          sed -i '/^[[:space:]]*android.aapt2FromMavenOverride[[:space:]]*=/d' gradle.properties
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           mkdir -p "$GRADLE_USER_HOME"
+
           {
             printf 'RELEASE_STORE_FILE=%s\n' "$GITHUB_WORKSPACE/release.keystore"
             printf 'RELEASE_STORE_PASSWORD=%s\n' "$RELEASE_STORE_PASSWORD"
@@ -128,11 +138,12 @@ jobs:
             printf 'RELEASE_KEY_PASSWORD=%s\n' "$RELEASE_KEY_PASSWORD"
             printf 'VERSION_NAME=%s\n' "$VERSION_NAME"
           } > "$GRADLE_USER_HOME/gradle.properties"
+
           chmod 600 "$GRADLE_USER_HOME/gradle.properties"
           chmod +x gradlew
 
       - name: Build signed APK and AAB
-        run: ./gradlew --no-daemon --console=plain clean assembleRelease bundleRelease
+        run: ./gradlew --no-daemon --console=plain -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" clean assembleRelease bundleRelease
 
       - name: Verify signature and collect files
         shell: bash
@@ -141,9 +152,16 @@ jobs:
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
           AAB="app/build/outputs/bundle/release/app-release.aab"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            verify \
+            --verbose \
+            --print-certs \
+            "$APK"
+
           test -f "$AAB"
           mkdir -p output
+
           cp "$APK" "output/XingChen-Assistant-${RELEASE_TAG}.apk"
           cp "$AAB" "output/XingChen-Assistant-${RELEASE_TAG}.aab"
 
