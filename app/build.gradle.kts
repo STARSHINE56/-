@@ -15,8 +15,15 @@ android {
         applicationId = "com.xingchen.assistant"
         minSdk = 23
         targetSdk = 34
-        versionCode = 10
-        versionName = providers.gradleProperty("VERSION_NAME").orElse("1.0.0").get()
+
+        versionCode = providers.gradleProperty("VERSION_CODE")
+            .orElse("10")
+            .get()
+            .toInt()
+
+        versionName = providers.gradleProperty("VERSION_NAME")
+            .orElse("1.0.0")
+            .get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -41,10 +48,12 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -82,7 +91,11 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
-    implementation(platform(libs.androidx.compose.bom))
+
+    implementation(
+        platform(libs.androidx.compose.bom)
+    )
+
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
