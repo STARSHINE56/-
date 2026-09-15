@@ -1,19 +1,24 @@
-name: Build and Release Android v5
+name: Build and Release Android v6
 
 on:
-  workflow_dispatch:
   push:
     branches: [main]
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number, for example 1.2.6 (without v)"
+        required: true
+        default: "1.2.6"
+        type: string
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   YUNX_USE_MIRROR: "false"
 
 concurrency:
-  group: android-v5-${{ github.ref }}
+  group: android-v6-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,24 +29,28 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+
       - name: Set up Java 17
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
+
       - name: Install Android SDK packages
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
       - name: Test and build
         run: |
           sed -i '/^[[:space:]]*android.aapt2FromMavenOverride[[:space:]]*=/d' gradle.properties
-          printf 'sdk.dir=%s\\n' "$ANDROID_HOME" > local.properties
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           chmod +x gradlew
           ./gradlew --no-daemon --console=plain testDebugUnitTest assembleDebug
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
         with:
@@ -52,12 +61,10 @@ jobs:
 
   release:
     name: Sign and publish release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch'
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: write
     env:
       SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
       RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
@@ -66,18 +73,35 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+
+      - name: Prepare version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="${INPUT_VERSION#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: $INPUT_VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Set up Java 17
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
+
       - name: Install Android SDK packages
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
       - name: Restore release signing key
         shell: bash
         run: |
@@ -87,32 +111,61 @@ jobs:
           test -n "$RELEASE_KEY_PASSWORD" || { echo "RELEASE_KEY_PASSWORD secret is missing"; exit 1; }
           printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > release.keystore
           chmod 600 release.keystore
+          keytool -list -keystore release.keystore -storepass "$RELEASE_STORE_PASSWORD" -alias "$RELEASE_KEY_ALIAS" >/dev/null
+
       - name: Configure release signing
         shell: bash
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version }}
         run: |
           sed -i '/^[[:space:]]*android.aapt2FromMavenOverride[[:space:]]*=/d' gradle.properties
-          printf 'sdk.dir=%s\\n' "$ANDROID_HOME" > local.properties
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           mkdir -p "$GRADLE_USER_HOME"
           {
             printf 'RELEASE_STORE_FILE=%s\n' "$GITHUB_WORKSPACE/release.keystore"
             printf 'RELEASE_STORE_PASSWORD=%s\n' "$RELEASE_STORE_PASSWORD"
             printf 'RELEASE_KEY_ALIAS=%s\n' "$RELEASE_KEY_ALIAS"
             printf 'RELEASE_KEY_PASSWORD=%s\n' "$RELEASE_KEY_PASSWORD"
-            printf 'VERSION_NAME=%s\n' "${GITHUB_REF_NAME#v}"
+            printf 'VERSION_NAME=%s\n' "$VERSION_NAME"
           } > "$GRADLE_USER_HOME/gradle.properties"
+          chmod 600 "$GRADLE_USER_HOME/gradle.properties"
           chmod +x gradlew
+
       - name: Build signed APK and AAB
         run: ./gradlew --no-daemon --console=plain clean assembleRelease bundleRelease
+
       - name: Verify signature and collect files
         shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          test -f "$AAB"
           mkdir -p output
-          cp "$APK" "output/星辰助手-${GITHUB_REF_NAME}.apk"
-          cp app/build/outputs/bundle/release/app-release.aab "output/星辰助手-${GITHUB_REF_NAME}.aab"
+          cp "$APK" "output/XingChen-Assistant-${RELEASE_TAG}.apk"
+          cp "$AAB" "output/XingChen-Assistant-${RELEASE_TAG}.aab"
+
+      - name: Upload signed packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: XingChen-Assistant-${{ steps.version.outputs.tag }}
+          path: output/*
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Publish GitHub Release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" output/* --generate-notes --verify-tag
-
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" output/* --clobber
+          else
+            gh release create "$RELEASE_TAG" output/* \
+              --target "$GITHUB_SHA" \
+              --title "XingChen Assistant $RELEASE_TAG" \
+              --generate-notes
+          fi
