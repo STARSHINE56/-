@@ -61,7 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
-import com.yunx.app.R
+import com.xingchen.assistant.R
 
 /**
  * 关于星辰助手页：应用介绍、支持平台、功能特性、技术栈与免责声明。

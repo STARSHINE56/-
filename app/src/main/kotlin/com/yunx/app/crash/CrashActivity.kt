@@ -43,7 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.yunx.app.MainActivity
+import com.xingchen.assistant.MainActivity
 import com.yunx.app.ui.GlobalSnackbarHost
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.items.CustomFabMenu

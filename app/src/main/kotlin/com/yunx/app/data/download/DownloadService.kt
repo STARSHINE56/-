@@ -10,8 +10,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import com.yunx.app.MainActivity
-import com.yunx.app.R
+import com.xingchen.assistant.MainActivity
+import com.xingchen.assistant.R
 
 /**
  * 下载前台服务：下载进行中保持前台运行。

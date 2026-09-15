@@ -98,7 +98,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.yunx.app.R
+import com.xingchen.assistant.R
 import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.ui.theme.ThemeController
 

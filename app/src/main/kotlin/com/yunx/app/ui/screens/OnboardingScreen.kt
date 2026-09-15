@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.yunx.app.R
+import com.xingchen.assistant.R
 
 /**
  * 首次启动引导页：应用介绍、功能特性、免责声明和开源仓库入口。

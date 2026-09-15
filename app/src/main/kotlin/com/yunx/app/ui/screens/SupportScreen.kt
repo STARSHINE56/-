@@ -63,7 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.yunx.app.R
+import com.xingchen.assistant.R
 import com.yunx.app.ui.SnackbarController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
