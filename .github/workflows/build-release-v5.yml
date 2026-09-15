@@ -1,16 +1,9 @@
-name: Build and Release Android v6
+name: Auto Release APK
 
 on:
   push:
-    branches: [main]
-
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version number, for example 1.0.0 (without v)"
-        required: true
-        default: "1.0.0"
-        type: string
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -19,67 +12,14 @@ env:
   YUNX_USE_MIRROR: "false"
 
 concurrency:
-  group: android-v6-${{ github.ref }}
+  group: android-auto-release-main
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: Test and build debug APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-
-      - name: Install Android SDK packages
-        run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          test -x "$SDKMANAGER"
-
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;35.0.0"
-
-      - name: Test and build
-        run: |
-          sed -i '/aapt2FromMavenOverride/d' gradle.properties
-
-          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
-
-          chmod +x gradlew
-
-          ./gradlew \
-            --no-daemon \
-            --console=plain \
-            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            testDebugUnitTest \
-            assembleDebug
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: XingChen-Assistant-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 7
-
   release:
-    name: Sign and publish release
-    if: github.event_name == 'workflow_dispatch'
-    needs: verify
+    name: Build and publish release APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     env:
       SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
@@ -90,22 +30,56 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Prepare version
+      - name: Determine next version
         id: version
         shell: bash
         env:
-          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${INPUT_VERSION#v}"
+          LATEST_TAG="$(gh release list \
+            --repo "$GITHUB_REPOSITORY" \
+            --limit 100 \
+            --json tagName \
+            --jq '.[].tagName' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -n 1 || true)"
 
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid version: $INPUT_VERSION"
-            exit 1
+          if [ -z "$LATEST_TAG" ]; then
+            VERSION="1.0.0"
+          else
+            CURRENT="${LATEST_TAG#v}"
+
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+            PATCH=$((PATCH + 1))
+
+            VERSION="${MAJOR}.${MINOR}.${PATCH}"
           fi
 
+          TAG="v${VERSION}"
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          echo "Next version: $TAG"
+
+      - name: Determine version code
+        id: version_code
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          VERSION_CODE=$((MAJOR * 1000000 + MINOR * 1000 + PATCH + 10))
+
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+          echo "Version code: $VERSION_CODE"
 
       - name: Set up Java 17
         uses: actions/setup-java@v6
@@ -115,8 +89,10 @@ jobs:
           cache: gradle
 
       - name: Install Android SDK packages
+        shell: bash
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
           test -x "$SDKMANAGER"
 
           yes | "$SDKMANAGER" --licenses >/dev/null || true
@@ -149,7 +125,9 @@ jobs:
             exit 1
           }
 
-          printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > release.keystore
+          printf '%s' "$SIGNING_KEY_BASE64" \
+            | base64 --decode \
+            > release.keystore
 
           chmod 600 release.keystore
 
@@ -159,10 +137,11 @@ jobs:
             -alias "$RELEASE_KEY_ALIAS" \
             >/dev/null
 
-      - name: Configure release signing
+      - name: Configure build
         shell: bash
         env:
           VERSION_NAME: ${{ steps.version.outputs.version }}
+          VERSION_CODE: ${{ steps.version_code.outputs.code }}
         run: |
           sed -i '/aapt2FromMavenOverride/d' gradle.properties
 
@@ -178,13 +157,25 @@ jobs:
             printf 'RELEASE_KEY_ALIAS=%s\n' "$RELEASE_KEY_ALIAS"
             printf 'RELEASE_KEY_PASSWORD=%s\n' "$RELEASE_KEY_PASSWORD"
             printf 'VERSION_NAME=%s\n' "$VERSION_NAME"
+            printf 'VERSION_CODE=%s\n' "$VERSION_CODE"
           } > "$GRADLE_USER_HOME/gradle.properties"
 
           chmod 600 "$GRADLE_USER_HOME/gradle.properties"
-
           chmod +x gradlew
 
-      - name: Build signed APK and AAB
+      - name: Test project
+        shell: bash
+        run: |
+          export GRADLE_USER_HOME="$HOME/.gradle"
+
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            testDebugUnitTest
+
+      - name: Build signed APK
+        shell: bash
         run: |
           export GRADLE_USER_HOME="$HOME/.gradle"
 
@@ -193,19 +184,16 @@ jobs:
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             clean \
-            assembleRelease \
-            bundleRelease
+            assembleRelease
 
-      - name: Verify signature and collect files
+      - name: Verify and collect APK
         shell: bash
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
-          AAB="app/build/outputs/bundle/release/app-release.aab"
 
           test -f "$APK"
-          test -f "$AAB"
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
@@ -215,14 +203,14 @@ jobs:
 
           mkdir -p output
 
-          cp "$APK" "output/XingChen-Assistant-${RELEASE_TAG}.apk"
-          cp "$AAB" "output/XingChen-Assistant-${RELEASE_TAG}.aab"
+          cp "$APK" \
+            "output/XingChen-Assistant-${RELEASE_TAG}.apk"
 
-      - name: Upload signed packages
+      - name: Upload release APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: XingChen-Assistant-${{ steps.version.outputs.tag }}
-          path: output/*
+          path: output/*.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -232,11 +220,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" output/* --clobber
-          else
-            gh release create "$RELEASE_TAG" output/* \
-              --target "$GITHUB_SHA" \
-              --title "星辰助手 $RELEASE_TAG" \
-              --generate-notes
-          fi
+          gh release create "$RELEASE_TAG" \
+            output/*.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "星辰助手 $RELEASE_TAG" \
+            --generate-notes
+
+          echo "Published 星辰助手 $RELEASE_TAG"
