@@ -1,3 +1,21 @@
+/*
+ * YunX (云析) - A network drive share-link parser and high-speed downloader for Android.
+ * Copyright (C) 2026 CYQawa
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.yunx.app.data.network
 
 import android.util.Base64
@@ -19,18 +37,6 @@ import java.util.TimeZone
 import java.util.concurrent.ThreadLocalRandom
 import java.util.zip.CRC32
 
-/**
- * 123 云盘 API 封装（OkHttp，依据《123网盘API文档_面向Agent.md》）。
- *
- * 鉴权体系（文档 §3.2 / §6）：
- * - 登录 `user.123pan.cn/api/user/sign_in`：无需签名，返回 JWT（data.token）；
- * - 分享列表 `yun.123pan.cn/b/api/share/get`：匿名、无需签名；
- * - 其余 yun.123pan.cn / www.123865.com 鉴权请求：必须带 `auth-key` / `auth-value` 签名头
- *   （CRC32 派生，算法已抓包实证 + 实时验证，见 [makeSign]）。
- *
- * 下载流程（文档 §4.2）：分享文件无需转存——直接拿 ShareKey + FileID + S3KeyFlag + Etag + Size
- * 换 `DownloadURL`（download-v2 包装），对 params 做 Base64 解码得真实 CDN 直链，下载带 Referer。
- */
 class Pan123Api(
     private val clientProvider: () -> OkHttpClient = { HttpClients.apiClient() }
 ) {
@@ -79,38 +85,6 @@ class Pan123Api(
         val data = "$ts|$random|$path|${Pan123Constants.SIGN_OS}|${Pan123Constants.SIGN_VER}|$authKey"
         val authValue = "$ts-$random-${crc32Hex(data)}"
         return authKey to authValue
-    }
-
-    // ---------- 登录（文档 §5.1，无签名） ----------
-
-    /**
-     * 账号密码登录 → data.token（JWT，Bearer）。
-     * 成功判定：`code == 200`（注意不是 0）。
-     */
-    suspend fun login(passport: String, password: String): String = withContext(Dispatchers.IO) {
-        val body = JSONObject()
-            .put("passport", passport)
-            .put("password", password)
-            .put("remember", false)
-        val request = Request.Builder()
-            .url(Pan123Constants.LOGIN_URL)
-            .header("Content-Type", "application/json;charset=UTF-8")
-            .header("platform", Pan123Constants.PLATFORM_WEB)
-            .header("app-version", Pan123Constants.APP_VERSION_LOGIN)
-            .header("loginuuid", loginuuid)
-            .header("Origin", Pan123Constants.LOGIN_BASE)
-            .header("Referer", "${Pan123Constants.LOGIN_BASE}/centerlogin?redirect_url=&source_page=website")
-            .header("User-Agent", Pan123Constants.WEB_UA)
-            .post(body.toString().toRequestBody(jsonMediaType))
-            .build()
-        val json = executeJson(request)
-        val code = json.optInt("code", -1)
-        if (code != 200) {
-            throw IllegalStateException(json.optString("message").ifBlank { "登录失败（code=$code）" })
-        }
-        val token = json.optJSONObject("data")?.optString("token").orEmpty()
-        if (token.isBlank()) throw IllegalStateException("登录失败：未返回 token")
-        token
     }
 
     // ---------- 用户信息（文档 §5.11） ----------
@@ -228,23 +202,40 @@ class Pan123Api(
 
     // ---------- 个人盘（网盘页，需登录+签名） ----------
 
-    /** 个人盘文件列表：GET /b/api/file/list/new（文档 §5.4）。返回 (文件列表, 下一页游标 or null) */
-    suspend fun listCloudFiles(parentFileId: String, token: String): Pair<List<ShareFile>, String?> =
-        withContext(Dispatchers.IO) {
-            val url = buildString {
-                append(Pan123Constants.FILE_LIST_URL)
-                append("?driveId=0&limit=100&next=0&orderBy=update_time&orderDirection=desc")
-                append("&parentFileId=").append(parentFileId)
-                append("&trashed=false&SearchData=&Page=1&OnlyLookAbnormalFile=0")
-                append("&event=homeListFile&operateType=1&inDirectSpace=false")
-            }
-            val json = getAuth(url, "/b/api/file/list/new", token)
-            checkOk(json, "获取文件列表失败")
-            val data = json.optJSONObject("data") ?: return@withContext Pair(emptyList(), null)
-            val files = parseInfoList(data)
-            val next = data.optString("Next").takeIf { it != "-1" }
-            Pair(files, next)
+    /** 单页个人盘文件：GET /b/api/file/list/new（文档 §5.4）。返回 (文件列表, 下一页游标 or null=末页) */
+    private suspend fun fetchCloudPage(
+        parentFileId: String,
+        token: String,
+        next: String
+    ): Pair<List<ShareFile>, String?>? = withContext(Dispatchers.IO) {
+        val url = buildString {
+            append(Pan123Constants.FILE_LIST_URL)
+            append("?driveId=0&limit=100&next=").append(next)
+            append("&orderBy=update_time&orderDirection=desc")
+            append("&parentFileId=").append(parentFileId)
+            append("&trashed=false&SearchData=&Page=1&OnlyLookAbnormalFile=0")
+            append("&event=homeListFile&operateType=1&inDirectSpace=false")
         }
+        val json = getAuth(url, "/b/api/file/list/new", token)
+        checkOk(json, "获取文件列表失败")
+        val data = json.optJSONObject("data") ?: return@withContext null
+        val files = parseInfoList(data)
+        // 文档 §5.4：Next=="-1" 表示末页（游标取 null 结束翻页）；空串 ""/数字表示还有下一页
+        val nextCursor = data.optString("Next").takeIf { it != "-1" }
+        Pair(files, nextCursor)
+    }
+
+    /** 个人盘文件列表：GET /b/api/file/list/new（文档 §5.4）。自动翻页，返回该目录下全部文件 */
+    suspend fun listCloudFiles(parentFileId: String, token: String): List<ShareFile> {
+        val all = mutableListOf<ShareFile>()
+        var next = "0"
+        repeat(200) {            // 封顶 200 页，防异常死循环
+            val (files, cursor) = fetchCloudPage(parentFileId, token, next) ?: return all
+            all += files
+            next = cursor ?: return all   // Next=="-1" 时 cursor 为 null，结束
+        }
+        return all
+    }
 
     /** 个人盘下载信息：POST /api/file/download_info（注意无 /b/，文档 §5.5）。返回真实直链 */
     suspend fun getDownloadLink(file: ShareFile, token: String): DownloadLink? = withContext(Dispatchers.IO) {

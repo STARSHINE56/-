@@ -1,8 +1,23 @@
+/*
+ * YunX (云析) - A network drive share-link parser and high-speed downloader for Android.
+ * Copyright (C) 2026 CYQawa
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.yunx.app.ui.viewmodel
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -14,7 +29,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * 123 云盘账号 ViewModel：账号+密码登录 → JWT 落库，暴露登录态供主页/登录页/解析页共享。
+ * 123 云盘账号 ViewModel：网页登录 Token（authorToken）校验落库，暴露登录态供主页/登录页/解析页共享。
  */
 class Pan123AccountViewModel(
     private val repository: Pan123AccountRepository
@@ -27,33 +42,8 @@ class Pan123AccountViewModel(
             initialValue = null
         )
 
-    /** 登录错误信息（登录页 Snackbar 提示） */
-    var loginError by mutableStateOf<String?>(null)
-        private set
-
-    /** 登录中（按钮 loading） */
-    var isLoggingIn by mutableStateOf(false)
-        private set
-
-    fun consumeLoginError() {
-        loginError = null
-    }
-
-    /** 账号密码登录；成功返回 true */
-    fun login(account: String, password: String) {
-        viewModelScope.launch {
-            loginError = null
-            isLoggingIn = true
-            try {
-                val ok = repository.login(account, password)
-                if (!ok) loginError = "登录失败，请检查账号密码"
-            } catch (e: Exception) {
-                loginError = e.message ?: "登录失败，请检查账号密码"
-            } finally {
-                isLoggingIn = false
-            }
-        }
-    }
+    /** 网页登录凭证（authorToken）校验并落库；返回是否保存成功（登录页「保存」与自动检测共用同一入口） */
+    suspend fun saveToken(token: String): Boolean = repository.saveToken(token)
 
     fun logout() {
         viewModelScope.launch { repository.logout() }

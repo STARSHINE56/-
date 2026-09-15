@@ -126,6 +126,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.map
 import com.yunx.app.data.network.HttpClients
 
 /**
@@ -278,6 +279,8 @@ fun MainScreen() {
     val pan123ViewModel: Pan123AccountViewModel = viewModel(
         factory = Pan123AccountViewModel.Factory(pan123Repository)
     )
+    val c139LoginState = remember { c139Repository.observeAccount().map { it != null } }
+    val pan123LoginState = remember { pan123Repository.observeAccount().map { it != null } }
     // 夸克云盘浏览：作为网盘 Tab 内容展示（非全屏），cookie 从数据库读取（避免 StateFlow 初始值为空的竞态）；
     // 下载前经 getFreshCookie 惰性刷新 __puus（修复 AlistGo/alist#830 下载 412）
     val quarkCloudViewModel: QuarkCloudViewModel = viewModel(
@@ -327,7 +330,8 @@ fun MainScreen() {
         factory = C139CloudViewModel.Factory(
             c139Api,
             { c139Repository.getAccount()?.cookie },
-            downloadManager
+            downloadManager,
+            loginState = c139LoginState
         )
     )
     // 123 云盘浏览：点击已登录的 123 卡片打开（token 从数据库读取）
@@ -335,7 +339,8 @@ fun MainScreen() {
         factory = Pan123CloudViewModel.Factory(
             pan123Api,
             { pan123Repository.getAccount()?.accessToken },
-            downloadManager
+            downloadManager,
+            loginState = pan123LoginState
         )
     )
     // 网盘空间详情：网盘页顶部「空间总览」展示 6 平台容量使用
