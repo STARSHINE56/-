@@ -16,7 +16,7 @@ android {
         minSdk = 23
         targetSdk = 34
         versionCode = 10
-        versionName = providers.gradleProperty("VERSION_NAME").orElse("1.2.6").get()
+        versionName = providers.gradleProperty("VERSION_NAME").orElse("1.0.0").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -60,7 +60,9 @@ android {
 
     kotlin {
         compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget("17"))
+            jvmTarget.set(
+                org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget("17")
+            )
         }
     }
 }
@@ -70,10 +72,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation(libs.material)   // 原 libs.material.color.utilities -> 改为官方 Material 主库（含 color.utilities 包）
+
+    implementation(libs.material)
 
     implementation(libs.room.runtime)
-    implementation(libs.room.ktx)          // 提供协程扩展，如 Flow、suspend
+    implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
     implementation(libs.androidx.core.ktx)
@@ -84,7 +87,9 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+
     testImplementation("junit:junit:4.13.2")
+
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
