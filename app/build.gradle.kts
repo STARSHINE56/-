@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.yunx.app"
+    namespace = "com.xingchen.assistant"
     compileSdk = 36
 
     defaultConfig {
@@ -16,23 +16,36 @@ android {
         minSdk = 23
         targetSdk = 34
         versionCode = 10
-        versionName = "1.2.6"
+        versionName = providers.gradleProperty("VERSION_NAME").orElse("1.2.6").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val releaseStoreFile = providers.gradleProperty("RELEASE_STORE_FILE")
+    val releaseStorePassword = providers.gradleProperty("RELEASE_STORE_PASSWORD")
+    val releaseKeyAlias = providers.gradleProperty("RELEASE_KEY_ALIAS")
+    val releaseKeyPassword = providers.gradleProperty("RELEASE_KEY_PASSWORD")
+
     signingConfigs {
-        getByName("debug") {
-            storeFile = file("../debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        create("release") {
+            if (releaseStoreFile.isPresent) {
+                storeFile = file(releaseStoreFile.get())
+                storePassword = releaseStorePassword.orNull
+                keyAlias = releaseKeyAlias.orNull
+                keyPassword = releaseKeyPassword.orNull
+            }
         }
     }
 
     buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("debug")
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

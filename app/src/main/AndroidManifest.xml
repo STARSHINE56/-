@@ -17,7 +17,7 @@
         android:maxSdkVersion="29" />
 
     <application
-        android:name=".YunXApp"
+        android:name=".XingChenApp"
         android:allowBackup="false"
         android:icon="@drawable/icon"
         android:label="@string/app_name"

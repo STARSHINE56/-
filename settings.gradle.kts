@@ -27,6 +27,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "YunX"
+rootProject.name = "XingChenAssistant"
 
 include(":app")

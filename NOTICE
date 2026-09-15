@@ -1,0 +1,16 @@
+星辰助手（XingChen Assistant）
+
+本项目是 CYQawa/YunX 的修改版本：
+https://github.com/CYQawa/YunX
+
+上游项目及本修改版本均依据 GNU Affero General Public License v3.0
+进行许可。完整许可证文本见仓库根目录 LICENSE。
+
+本修改版本由 STARSHINE56 维护，主要变更包括：
+- 应用名称、应用 ID、代码包名及项目标识调整；
+- 用户界面与下载体验改进；
+- 构建、签名和 GitHub Release 发布流程改进；
+- 稳定性、安全性和维护性优化。
+
+网盘平台名称、图标及商标归各自权利人所有。本项目与这些平台没有
+隶属、赞助或官方合作关系。
