@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout 星辰助手
+      - name: Checkout XingChen Assistant
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -44,16 +44,14 @@ jobs:
           git remote remove yunx-upstream 2>/dev/null || true
           git remote add yunx-upstream https://github.com/CYQawa/YunX.git
           git fetch --no-tags yunx-upstream edd29c107ec0272d82fc93011e113b3b837cb3ce
-          git rev-parse FETCH_HEAD
 
-      - name: Migrate functional changes only
+      - name: Migrate file browsing features
         shell: bash
         run: |
           set -euo pipefail
           UPSTREAM_SHA="edd29c107ec0272d82fc93011e113b3b837cb3ce"
 
           files=(
-            "app/src/main/kotlin/com/yunx/app/data/download/DownloadManager.kt"
             "app/src/main/kotlin/com/yunx/app/data/network/BaiduApi.kt"
             "app/src/main/kotlin/com/yunx/app/data/network/C139Api.kt"
             "app/src/main/kotlin/com/yunx/app/data/network/Pan123Api.kt"
@@ -81,197 +79,15 @@ jobs:
 
           git checkout "$UPSTREAM_SHA" -- "${files[@]}"
 
-          # 明确保留：
-          # - com.xingchen.assistant 包名与入口
-          # - 星辰助手名称 / 图标
-          # - versionName / versionCode
-          # - Release 签名与发布工作流
-          # - README / NOTICE
-          #
-          # 明确不移植：
-          # - LaunchGate
-          # - ArchiveProbe
-          # - TextCipher
-          # - SafetyNoticeDialog
-          # - YunX 自己的反二次打包完整性检测
-
           echo "Changed files:"
           git status --short
 
-          # 核心功能存在性检查
           grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/BaiduCloudScreen.kt
           grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/C139CloudScreen.kt
           grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/Pan123CloudScreen.kt
           grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/CloudDriveScreen.kt
           grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/UCCoudScreen.kt
           grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/XunleiCloudScreen.kt
-
-      - name: Add notification compatibility to 星辰助手入口
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("app/src/main/kotlin/com/xingchen/assistant/MainActivity.kt")
-          text = p.read_text(encoding="utf-8")
-
-          replacements = [
-              ("import android.Manifest\n",
-               "import android.Manifest\nimport android.content.Intent\n"),
-              ("import android.content.pm.PackageManager\n",
-               "import android.content.pm.PackageManager\nimport android.net.Uri\n"),
-              ("import android.os.Bundle\n",
-               "import android.os.Bundle\nimport android.provider.Settings\n"),
-              ("import androidx.activity.result.contract.ActivityResultContracts\n",
-               "import androidx.activity.result.contract.ActivityResultContracts\n"
-               "import androidx.compose.material3.AlertDialog\n"
-               "import androidx.compose.material3.Text\n"
-               "import androidx.compose.material3.TextButton\n"
-               "import androidx.compose.runtime.Composable\n"
-               "import androidx.compose.runtime.getValue\n"
-               "import androidx.compose.runtime.mutableStateOf\n"
-               "import androidx.compose.runtime.setValue\n"
-               "import androidx.compose.ui.platform.LocalContext\n"),
-              ("import androidx.core.content.ContextCompat\n",
-               "import androidx.core.app.NotificationManagerCompat\n"
-               "import androidx.core.content.ContextCompat\n"),
-          ]
-
-          for old, new in replacements:
-              if old in text and new not in text:
-                  text = text.replace(old, new, 1)
-
-          marker = (
-              "    private val notificationPermLauncher =\n"
-              "        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }\n"
-          )
-          if "private var showNotificationGuide" not in text:
-              text = text.replace(
-                  marker,
-                  marker
-                  + "\n"
-                  + "    // 通知被系统或用户关闭时，引导到系统通知设置。\n"
-                  + "    private var showNotificationGuide by mutableStateOf(false)\n",
-                  1,
-              )
-
-          old_content = """            ComposeEmptyActivityTheme {
-                MainScreen()
-            }
-"""
-          new_content = """            ComposeEmptyActivityTheme {
-                MainScreen()
-                if (showNotificationGuide) {
-                    NotificationPermissionDialog(
-                        onDismiss = { showNotificationGuide = false }
-                    )
-                }
-            }
-"""
-          if "NotificationPermissionDialog(" not in text:
-              if old_content not in text:
-                  raise SystemExit("MainActivity Compose block not found")
-              text = text.replace(old_content, new_content, 1)
-
-          old_fn = """    /** Android 13+ 申请通知权限；低版本（<33）系统自动授予，无需申请 */
-    private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
-}"""
-
-          new_fn = """    /** Android 13+ 先申请运行时权限；任意版本通知被关闭时引导去系统设置。 */
-    private fun requestNotificationPermissionIfNeeded() {
-        val notifDisabled =
-            !NotificationManagerCompat.from(this).areNotificationsEnabled()
-
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermLauncher.launch(
-                Manifest.permission.POST_NOTIFICATIONS
-            )
-        } else if (notifDisabled) {
-            showNotificationGuide = true
-        }
-    }
-}
-
-@Composable
-private fun NotificationPermissionDialog(
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("开启通知权限") },
-        text = {
-            Text(
-                "下载进度需要通知权限才能显示在通知栏。"
-                    + "当前通知已被关闭，是否前往系统设置开启？"
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    onDismiss()
-
-                    runCatching {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                            ).putExtra(
-                                Settings.EXTRA_APP_PACKAGE,
-                                context.packageName
-                            )
-                        )
-                    }.onFailure {
-                        runCatching {
-                            context.startActivity(
-                                Intent(
-                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS
-                                ).setData(
-                                    Uri.parse(
-                                        "package:${context.packageName}"
-                                    )
-                                )
-                            )
-                        }
-                    }
-                }
-            ) {
-                Text("去开启")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("暂不")
-            }
-        }
-    )
-}
-"""
-
-          if old_fn in text:
-              text = text.replace(old_fn, new_fn, 1)
-          elif "private fun NotificationPermissionDialog" not in text:
-              raise SystemExit(
-                  "MainActivity structure changed; "
-                  "notification patch was not applied"
-              )
-
-          p.write_text(text, encoding="utf-8")
-          PY
 
       - name: Build verification
         shell: bash
@@ -286,19 +102,15 @@ private fun NotificationPermissionDialog(
           set -euo pipefail
 
           git config user.name "github-actions[bot]"
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 一次性工作流完成后删除自身，避免以后重复执行。
           rm -f .github/workflows/migrate-yunx-20260904.yml
-
           git add -A
 
           if git diff --cached --quiet; then
-            echo "No source changes to commit."
+            echo "No changes to commit."
             exit 0
           fi
 
-          git commit -m \
-            "feat: migrate YunX 2026-09-04 functional updates"
+          git commit -m "feat: migrate YunX 2026-09-04 browsing updates"
           git push origin HEAD:main
