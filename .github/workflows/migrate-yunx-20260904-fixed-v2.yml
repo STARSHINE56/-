@@ -1,0 +1,114 @@
+name: Migrate YunX 2026-09-04 Features
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/migrate-yunx-20260904.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout XingChen Assistant
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
+      - name: Fetch YunX upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote remove yunx-upstream 2>/dev/null || true
+          git remote add yunx-upstream https://github.com/CYQawa/YunX.git
+          git fetch --no-tags yunx-upstream edd29c107ec0272d82fc93011e113b3b837cb3ce
+
+      - name: Migrate file browsing features
+        shell: bash
+        run: |
+          set -euo pipefail
+          UPSTREAM_SHA="edd29c107ec0272d82fc93011e113b3b837cb3ce"
+
+          files=(
+            "app/src/main/kotlin/com/yunx/app/data/network/BaiduApi.kt"
+            "app/src/main/kotlin/com/yunx/app/data/network/C139Api.kt"
+            "app/src/main/kotlin/com/yunx/app/data/network/Pan123Api.kt"
+            "app/src/main/kotlin/com/yunx/app/data/network/Pan123Constants.kt"
+            "app/src/main/kotlin/com/yunx/app/data/network/QuarkApi.kt"
+            "app/src/main/kotlin/com/yunx/app/data/network/QuarkConstants.kt"
+            "app/src/main/kotlin/com/yunx/app/data/network/UCApi.kt"
+            "app/src/main/kotlin/com/yunx/app/data/network/XunleiApi.kt"
+            "app/src/main/kotlin/com/yunx/app/data/repository/Pan123ResolveRepository.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/resolve/ShareDetailScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/screens/BaiduCloudScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/screens/BookmarkScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/screens/C139CloudScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/screens/CloudDriveScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/screens/CloudFileSheets.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/screens/Pan123CloudScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/screens/UCCoudScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/screens/XunleiCloudScreen.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/viewmodel/C139CloudViewModel.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/viewmodel/Pan123CloudViewModel.kt"
+          )
+
+          git checkout "$UPSTREAM_SHA" -- "${files[@]}"
+
+          echo "Changed files:"
+          git status --short
+
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/BaiduCloudScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/C139CloudScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/Pan123CloudScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/CloudDriveScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/UCCoudScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/XunleiCloudScreen.kt
+
+      - name: Build verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace
+
+      - name: Commit migrated source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          rm -f .github/workflows/migrate-yunx-20260904.yml
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "feat: migrate YunX 2026-09-04 browsing updates"
+          git push origin HEAD:main
