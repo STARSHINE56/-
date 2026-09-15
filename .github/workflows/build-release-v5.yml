@@ -1,6 +1,8 @@
 name: Auto Release APK
 
 on:
+  workflow_dispatch:
+
   push:
     branches:
       - main
