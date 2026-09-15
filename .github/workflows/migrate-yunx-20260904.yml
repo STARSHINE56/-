@@ -2,11 +2,9 @@ name: Migrate YunX 2026-09-04 Features
 
 on:
   workflow_dispatch:
-
   push:
     branches:
       - main
-
     paths:
       - ".github/workflows/migrate-yunx-20260904.yml"
 
@@ -38,13 +36,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
           test -x "$SDKMANAGER"
-
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-36" \
@@ -54,23 +48,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           git remote remove yunx-upstream 2>/dev/null || true
-
-          git remote add \
-            yunx-upstream \
-            https://github.com/CYQawa/YunX.git
-
-          git fetch \
-            --no-tags \
-            yunx-upstream \
-            edd29c107ec0272d82fc93011e113b3b837cb3ce
+          git remote add yunx-upstream https://github.com/CYQawa/YunX.git
+          git fetch --no-tags yunx-upstream edd29c107ec0272d82fc93011e113b3b837cb3ce
 
       - name: Migrate file browsing features
         shell: bash
         run: |
           set -euo pipefail
-
           UPSTREAM_SHA="edd29c107ec0272d82fc93011e113b3b837cb3ce"
 
           files=(
@@ -97,36 +82,18 @@ jobs:
             "app/src/main/kotlin/com/yunx/app/ui/screens/UCCoudScreen.kt"
             "app/src/main/kotlin/com/yunx/app/ui/screens/XunleiCloudScreen.kt"
             "app/src/main/kotlin/com/yunx/app/ui/viewmodel/C139CloudViewModel.kt"
+            "app/src/main/kotlin/com/yunx/app/ui/viewmodel/Pan123AccountViewModel.kt"
             "app/src/main/kotlin/com/yunx/app/ui/viewmodel/Pan123CloudViewModel.kt"
           )
 
-          git checkout \
-            "$UPSTREAM_SHA" \
-            -- "${files[@]}"
+          git checkout "$UPSTREAM_SHA" -- "${files[@]}"
 
-          grep -q \
-            "searchQuery" \
-            app/src/main/kotlin/com/yunx/app/ui/screens/BaiduCloudScreen.kt
-
-          grep -q \
-            "searchQuery" \
-            app/src/main/kotlin/com/yunx/app/ui/screens/C139CloudScreen.kt
-
-          grep -q \
-            "searchQuery" \
-            app/src/main/kotlin/com/yunx/app/ui/screens/Pan123CloudScreen.kt
-
-          grep -q \
-            "searchQuery" \
-            app/src/main/kotlin/com/yunx/app/ui/screens/CloudDriveScreen.kt
-
-          grep -q \
-            "searchQuery" \
-            app/src/main/kotlin/com/yunx/app/ui/screens/UCCoudScreen.kt
-
-          grep -q \
-            "searchQuery" \
-            app/src/main/kotlin/com/yunx/app/ui/screens/XunleiCloudScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/BaiduCloudScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/C139CloudScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/Pan123CloudScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/CloudDriveScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/UCCoudScreen.kt
+          grep -q "searchQuery" app/src/main/kotlin/com/yunx/app/ui/screens/XunleiCloudScreen.kt
 
       - name: Patch MainScreen compatibility
         shell: bash
@@ -136,54 +103,30 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path(
-              "app/src/main/kotlin/com/yunx/app/ui/MainScreen.kt"
-          )
-
-          text = path.read_text(
-              encoding="utf-8"
-          )
+          path = Path("app/src/main/kotlin/com/yunx/app/ui/MainScreen.kt")
+          text = path.read_text(encoding="utf-8")
 
           if "import kotlinx.coroutines.flow.map" not in text:
               anchor = "import kotlinx.coroutines.withContext\n"
-
               if anchor not in text:
-                  raise SystemExit(
-                      "MainScreen import anchor not found"
-                  )
-
-              text = text.replace(
-                  anchor,
-                  anchor + "import kotlinx.coroutines.flow.map\n",
-                  1
-              )
+                  raise SystemExit("MainScreen import anchor not found")
+              text = text.replace(anchor, anchor + "import kotlinx.coroutines.flow.map\n", 1)
 
           state_anchor = (
               "    val pan123ViewModel: Pan123AccountViewModel = viewModel(\n"
-              "        factory = Pan123AccountViewModel.Factory("
-              "pan123Repository)\n"
+              "        factory = Pan123AccountViewModel.Factory(pan123Repository)\n"
               "    )\n"
           )
-
           state_replacement = (
               state_anchor
-              + "    val c139LoginState = remember { "
-              "c139Repository.observeAccount().map { it != null } }\n"
-              + "    val pan123LoginState = remember { "
-              "pan123Repository.observeAccount().map { it != null } }\n"
+              + "    val c139LoginState = remember { c139Repository.observeAccount().map { it != null } }\n"
+              + "    val pan123LoginState = remember { pan123Repository.observeAccount().map { it != null } }\n"
           )
 
           if "val c139LoginState =" not in text:
               if state_anchor not in text:
-                  raise SystemExit(
-                      "MainScreen login-state anchor not found"
-                  )
-
-              text = text.replace(
-                  state_anchor,
-                  state_replacement,
-                  1
-              )
+                  raise SystemExit("MainScreen login-state anchor not found")
+              text = text.replace(state_anchor, state_replacement, 1)
 
           c139_old = (
               "        factory = C139CloudViewModel.Factory(\n"
@@ -192,7 +135,6 @@ jobs:
               "            downloadManager\n"
               "        )\n"
           )
-
           c139_new = (
               "        factory = C139CloudViewModel.Factory(\n"
               "            c139Api,\n"
@@ -203,15 +145,9 @@ jobs:
           )
 
           if c139_old in text:
-              text = text.replace(
-                  c139_old,
-                  c139_new,
-                  1
-              )
+              text = text.replace(c139_old, c139_new, 1)
           elif "loginState = c139LoginState" not in text:
-              raise SystemExit(
-                  "C139 factory anchor not found"
-              )
+              raise SystemExit("C139 factory anchor not found")
 
           pan_old = (
               "        factory = Pan123CloudViewModel.Factory(\n"
@@ -220,7 +156,6 @@ jobs:
               "            downloadManager\n"
               "        )\n"
           )
-
           pan_new = (
               "        factory = Pan123CloudViewModel.Factory(\n"
               "            pan123Api,\n"
@@ -231,59 +166,31 @@ jobs:
           )
 
           if pan_old in text:
-              text = text.replace(
-                  pan_old,
-                  pan_new,
-                  1
-              )
+              text = text.replace(pan_old, pan_new, 1)
           elif "loginState = pan123LoginState" not in text:
-              raise SystemExit(
-                  "Pan123 factory anchor not found"
-              )
+              raise SystemExit("Pan123 factory anchor not found")
 
-          path.write_text(
-              text,
-              encoding="utf-8"
-          )
+          path.write_text(text, encoding="utf-8")
           PY
 
-          grep -q \
-            "loginState = c139LoginState" \
-            app/src/main/kotlin/com/yunx/app/ui/MainScreen.kt
-
-          grep -q \
-            "loginState = pan123LoginState" \
-            app/src/main/kotlin/com/yunx/app/ui/MainScreen.kt
-
-          grep -q \
-            "suspend fun saveToken" \
-            app/src/main/kotlin/com/yunx/app/data/repository/Pan123AccountRepository.kt
+          grep -q "loginState = c139LoginState" app/src/main/kotlin/com/yunx/app/ui/MainScreen.kt
+          grep -q "loginState = pan123LoginState" app/src/main/kotlin/com/yunx/app/ui/MainScreen.kt
+          grep -q "suspend fun saveToken" app/src/main/kotlin/com/yunx/app/data/repository/Pan123AccountRepository.kt
 
       - name: Configure debug build
         shell: bash
         run: |
           set -euo pipefail
-
-          sed -i \
-            '/aapt2FromMavenOverride/d' \
-            gradle.properties
-
-          printf \
-            'sdk.dir=%s\n' \
-            "$ANDROID_HOME" \
-            > local.properties
-
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           export GRADLE_USER_HOME="$HOME/.gradle"
-
           mkdir -p "$GRADLE_USER_HOME"
-
           chmod +x gradlew
 
       - name: Build verification
         shell: bash
         run: |
           set -euo pipefail
-
           export GRADLE_USER_HOME="$HOME/.gradle"
 
           ./gradlew \
@@ -298,19 +205,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          git config \
-            user.name \
-            "github-actions[bot]"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git config \
-            user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
-
-          rm -f \
-            .github/workflows/migrate-yunx-20260904.yml
-
-          rm -f \
-            local.properties
+          rm -f .github/workflows/migrate-yunx-20260904.yml
+          rm -f local.properties
 
           git add -A
 
@@ -319,9 +218,5 @@ jobs:
             exit 0
           fi
 
-          git commit \
-            -m "feat: migrate YunX 2026-09-04 browsing updates"
-
-          git push \
-            origin \
-            HEAD:main
+          git commit -m "feat: migrate YunX 2026-09-04 browsing updates"
+          git push origin HEAD:main
