@@ -159,6 +159,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path("app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt")
           text = path.read_text(encoding="utf-8")
@@ -204,29 +205,30 @@ jobs:
               "history state",
           )
 
-          replace_once(
-              """                    onClearPwd = { pwd = "" }
-                )
-          """,
-              """                    onClearPwd = { pwd = "" },
-                      recentHistory = recentHistory,
-                      onStartResolve = { rawLink, password ->
-                          resolveAndRemember(rawLink, password)
-                      },
-                      onHistorySelect = { item ->
-                          link = item.link
-                          pwd = item.password
-                          pwdEdited = true
-                          resolveAndRemember(item.link, item.password.ifBlank { null })
-                      },
-                      onClearHistory = {
-                          historyRepository.clear()
-                          recentHistory = emptyList()
-                      }
-                  )
-          """,
-              "ResolveInputContent call",
+          # ResolveInputContent 调用处可能因源码格式化产生不同缩进，使用正则稳健匹配。
+          pattern = re.compile(
+              r'onClearPwd = \{ pwd = "" \}\s*\n\s*\)',
+              re.MULTILINE,
           )
+          replacement = """onClearPwd = { pwd = "" },
+                    recentHistory = recentHistory,
+                    onStartResolve = { rawLink, password ->
+                        resolveAndRemember(rawLink, password)
+                    },
+                    onHistorySelect = { item ->
+                        link = item.link
+                        pwd = item.password
+                        pwdEdited = true
+                        resolveAndRemember(item.link, item.password.ifBlank { null })
+                    },
+                    onClearHistory = {
+                        historyRepository.clear()
+                        recentHistory = emptyList()
+                    }
+                )"""
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise RuntimeError("Patch target not found: ResolveInputContent call")
 
           # 剪贴板提示也记入历史。
           replace_once(
