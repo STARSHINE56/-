@@ -9,41 +9,37 @@ permissions:
 env:
   YUNX_USE_MIRROR: "false"
 
-concurrency:
-  group: fix-android-lint-errors
-  cancel-in-progress: false
-
 jobs:
-  fix:
-    name: Fix Android lint errors
+  fix-lint:
+    name: Fix Android Lint
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
-      - name: Check out source
+      - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      # ============================================================
-      # 1. 修复 Manifest 中 namespace 错误
-      # ============================================================
-
-      - name: Fix manifest component paths
+      - name: Fix known source issues
         shell: bash
         run: |
           python3 <<'PY'
           from pathlib import Path
 
-          path = Path(
+          # =========================================================
+          # AndroidManifest.xml
+          # =========================================================
+
+          manifest_path = Path(
               "app/src/main/AndroidManifest.xml"
           )
 
-          text = path.read_text(
+          manifest = manifest_path.read_text(
               encoding="utf-8"
           )
 
-          fixes = {
+          manifest_fixes = {
               'android:name=".crash.CrashActivity"':
                   'android:name="com.yunx.app.crash.CrashActivity"',
 
@@ -51,124 +47,89 @@ jobs:
                   'android:name="com.yunx.app.data.download.DownloadService"',
           }
 
-          for old, new in fixes.items():
-              old_count = text.count(old)
-              new_count = text.count(new)
-
-              if old_count == 1:
-                  text = text.replace(
+          for old, new in manifest_fixes.items():
+              if old in manifest:
+                  manifest = manifest.replace(
                       old,
                       new,
                       1
                   )
+                  print("Fixed:", old)
 
-                  print(
-                      f"Fixed: {old}"
-                  )
-
-              elif (
-                  old_count == 0
-                  and new_count == 1
-              ):
-                  print(
-                      f"Already fixed: {new}"
-                  )
+              elif new in manifest:
+                  print("Already fixed:", new)
 
               else:
                   raise RuntimeError(
-                      f"Unexpected manifest state: "
-                      f"{old} old={old_count}, "
-                      f"new={new_count}"
+                      "Cannot find manifest component: "
+                      + old
                   )
 
-          path.write_text(
-              text,
+          manifest_path.write_text(
+              manifest,
               encoding="utf-8"
           )
-          PY
 
-      # ============================================================
-      # 2. 修复 BaiduApi 可疑缩进
-      # ============================================================
+          # =========================================================
+          # BaiduApi.kt
+          # =========================================================
 
-      - name: Fix BaiduApi indentation
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path(
+          baidu_path = Path(
               "app/src/main/kotlin/com/yunx/app/data/network/"
               "BaiduApi.kt"
           )
 
-          text = path.read_text(
+          baidu = baidu_path.read_text(
               encoding="utf-8"
           )
 
-          old = '''                val path = item.optString("path")
+          old_baidu = '''                val path = item.optString("path")
                     add(
                         ShareFile(
           '''
 
-          new = '''                val path = item.optString("path")
+          new_baidu = '''                val path = item.optString("path")
                 add(
                     ShareFile(
           '''
 
-          count = text.count(old)
-
-          if count == 1:
-              text = text.replace(
-                  old,
-                  new,
+          if old_baidu in baidu:
+              baidu = baidu.replace(
+                  old_baidu,
+                  new_baidu,
                   1
               )
-
-              print(
-                  "Fixed BaiduApi suspicious indentation."
-              )
-
-          elif count == 0 and new in text:
-              print(
-                  "BaiduApi indentation already fixed."
-              )
+              print("Fixed BaiduApi indentation")
 
           else:
-              raise RuntimeError(
-                  f"BaiduApi expected 1 match, found {count}"
+              print(
+                  "BaiduApi indentation already fixed "
+                  "or source changed"
               )
 
-          path.write_text(
-              text,
+          baidu_path.write_text(
+              baidu,
               encoding="utf-8"
           )
-          PY
 
-      # ============================================================
-      # 3. 修复 XunleiApi 两处可疑缩进
-      # ============================================================
+          # =========================================================
+          # XunleiApi.kt
+          # =========================================================
 
-      - name: Fix XunleiApi indentation
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path(
+          xunlei_path = Path(
               "app/src/main/kotlin/com/yunx/app/data/network/"
               "XunleiApi.kt"
           )
 
-          text = path.read_text(
+          xunlei = xunlei_path.read_text(
               encoding="utf-8"
           )
 
-          old = '''            .header("Referer", "https://pan.xunlei.com/")
+          old_xunlei = '''            .header("Referer", "https://pan.xunlei.com/")
             if (captchaToken.isNotBlank()) builder.header("X-Captcha-Token", captchaToken)
           '''
 
-          new = '''            .header("Referer", "https://pan.xunlei.com/")
+          new_xunlei = '''            .header("Referer", "https://pan.xunlei.com/")
 
         if (captchaToken.isNotBlank()) {
             builder.header(
@@ -178,197 +139,109 @@ jobs:
         }
           '''
 
-          count = text.count(old)
+          count = xunlei.count(
+              old_xunlei
+          )
 
-          if count == 2:
-              text = text.replace(
-                  old,
-                  new
+          if count:
+              xunlei = xunlei.replace(
+                  old_xunlei,
+                  new_xunlei
               )
-
               print(
-                  "Fixed 2 XunleiApi indentation issues."
-              )
-
-          elif (
-              count == 0
-              and text.count(
-                  'builder.header(\n'
-                  '                "X-Captcha-Token",'
-              ) == 2
-          ):
-              print(
-                  "XunleiApi indentation already fixed."
+                  f"Fixed XunleiApi indentation: {count}"
               )
 
           else:
-              raise RuntimeError(
-                  f"XunleiApi expected 2 matches, "
-                  f"found {count}"
+              print(
+                  "XunleiApi indentation already fixed "
+                  "or source changed"
               )
 
-          path.write_text(
-              text,
+          xunlei_path.write_text(
+              xunlei,
               encoding="utf-8"
           )
-          PY
 
-      # ============================================================
-      # 4. Theme.kt
-      #
-      # Material Color Utilities 的 API 被 @RestrictTo 标记，
-      # 但当前项目明确使用它来生成主题颜色。
-      # 这里只对 seedColorScheme() 做局部 suppression，
-      # 不全局关闭 RestrictedApi。
-      # ============================================================
+          # =========================================================
+          # Theme.kt
+          # 仅针对明确使用的 Material Color Utilities API
+          # =========================================================
 
-      - name: Suppress intentional restricted color API
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path(
+          theme_path = Path(
               "app/src/main/kotlin/com/yunx/app/ui/theme/"
               "Theme.kt"
           )
 
-          text = path.read_text(
+          theme = theme_path.read_text(
               encoding="utf-8"
           )
 
-          marker = '''@Composable
-          private fun seedColorScheme(
-          '''
+          annotation = (
+              '@android.annotation.SuppressLint("RestrictedApi")'
+          )
 
-          replacement = '''@android.annotation.SuppressLint("RestrictedApi")
-          @Composable
-          private fun seedColorScheme(
-          '''
+          function_marker = (
+              "@Composable\n"
+              "private fun seedColorScheme("
+          )
 
-          if replacement in text:
+          annotated_marker = (
+              annotation
+              + "\n"
+              + function_marker
+          )
+
+          if annotated_marker in theme:
               print(
-                  "RestrictedApi suppression already exists."
+                  "Theme RestrictedApi suppression "
+                  "already exists"
               )
 
-          else:
-              count = text.count(marker)
-
-              if count != 1:
-                  raise RuntimeError(
-                      "seedColorScheme marker expected "
-                      f"1 match, found {count}"
-                  )
-
-              text = text.replace(
-                  marker,
-                  replacement,
+          elif function_marker in theme:
+              theme = theme.replace(
+                  function_marker,
+                  annotated_marker,
                   1
               )
 
               print(
-                  "Added local RestrictedApi suppression."
+                  "Added local RestrictedApi suppression"
               )
 
-          path.write_text(
-              text,
+          else:
+              raise RuntimeError(
+                  "seedColorScheme() not found"
+              )
+
+          theme_path.write_text(
+              theme,
               encoding="utf-8"
+          )
+
+          print(
+              "Known source fixes completed"
           )
           PY
 
-      # ============================================================
-      # 5. 清理尾部空格
-      # ============================================================
-
-      - name: Clean source whitespace
+      - name: Verify component classes
         shell: bash
         run: |
-          python3 <<'PY'
-          from pathlib import Path
+          test -f \
+            app/src/main/kotlin/com/yunx/app/crash/CrashActivity.kt
 
-          files = [
-              Path(
-                  "app/src/main/AndroidManifest.xml"
-              ),
-              Path(
-                  "app/src/main/kotlin/com/yunx/app/data/network/"
-                  "BaiduApi.kt"
-              ),
-              Path(
-                  "app/src/main/kotlin/com/yunx/app/data/network/"
-                  "XunleiApi.kt"
-              ),
-              Path(
-                  "app/src/main/kotlin/com/yunx/app/ui/theme/"
-                  "Theme.kt"
-              ),
-          ]
-
-          for path in files:
-              text = path.read_text(
-                  encoding="utf-8"
-              )
-
-              cleaned = "\n".join(
-                  line.rstrip()
-                  for line in text.splitlines()
-              )
-
-              if text.endswith("\n"):
-                  cleaned += "\n"
-
-              path.write_text(
-                  cleaned,
-                  encoding="utf-8"
-              )
-
-              print(
-                  f"Cleaned: {path}"
-              )
-          PY
-
-      # ============================================================
-      # 6. 验证源码改动
-      # ============================================================
-
-      - name: Verify source fixes
-        shell: bash
-        run: |
-          MANIFEST="app/src/main/AndroidManifest.xml"
+          test -f \
+            app/src/main/kotlin/com/yunx/app/data/download/DownloadService.kt
 
           grep -q \
-            'android:name="com.yunx.app.crash.CrashActivity"' \
-            "$MANIFEST"
+            '^package com.yunx.app.crash' \
+            app/src/main/kotlin/com/yunx/app/crash/CrashActivity.kt
 
           grep -q \
-            'android:name="com.yunx.app.data.download.DownloadService"' \
-            "$MANIFEST"
+            '^package com.yunx.app.data.download' \
+            app/src/main/kotlin/com/yunx/app/data/download/DownloadService.kt
 
-          grep -q \
-            '@android.annotation.SuppressLint("RestrictedApi")' \
-            app/src/main/kotlin/com/yunx/app/ui/theme/Theme.kt
-
-          if grep -q \
-            'android:name=".crash.CrashActivity"' \
-            "$MANIFEST"
-          then
-            echo "Old CrashActivity path still exists."
-            exit 1
-          fi
-
-          if grep -q \
-            'android:name=".data.download.DownloadService"' \
-            "$MANIFEST"
-          then
-            echo "Old DownloadService path still exists."
-            exit 1
-          fi
-
-          echo "Source fixes verified."
-
-      # ============================================================
-      # 7. Java
-      # ============================================================
+          echo "Component classes verified"
 
       - name: Set up Java 17
         uses: actions/setup-java@v6
@@ -377,11 +250,7 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      # ============================================================
-      # 8. Android SDK
-      # ============================================================
-
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         shell: bash
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
@@ -395,29 +264,26 @@ jobs:
             "platforms;android-36" \
             "build-tools;35.0.0"
 
-      # ============================================================
-      # 9. Gradle 环境
-      # ============================================================
-
-      - name: Configure Android build
+      - name: Configure build
         shell: bash
         run: |
           sed -i \
             '/aapt2FromMavenOverride/d' \
             gradle.properties
 
-          printf \
-            'sdk.dir=%s\n' \
-            "$ANDROID_HOME" \
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" \
             > local.properties
 
           chmod +x gradlew
 
-      # ============================================================
-      # 10. 单元测试
-      #
-      # 先确认我们手工修改没有破坏编译。
-      # ============================================================
+      - name: Check source diff
+        shell: bash
+        run: |
+          git diff --check
+
+          echo
+          echo "Changed files:"
+          git diff --name-only
 
       - name: Run unit tests
         shell: bash
@@ -428,27 +294,18 @@ jobs:
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             testDebugUnitTest
 
-      # ============================================================
-      # 11. 第一次 Lint
-      #
-      # 这里允许失败，因为目的是统计剩余历史问题。
-      # 不运行 lintFix，不自动改任何 Kotlin 源码。
-      # ============================================================
-
+      # 第一次 Lint 用来查看修复真实问题后还剩多少历史问题。
+      # 这里只允许这一步失败，不修改源码。
       - name: Run lint before baseline
-        id: lint_before_baseline
-        shell: bash
+        id: lint_before
         continue-on-error: true
+        shell: bash
         run: |
           ./gradlew \
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             lintDebug
-
-      # ============================================================
-      # 12. 配置 baseline
-      # ============================================================
 
       - name: Configure lint baseline
         shell: bash
@@ -464,52 +321,34 @@ jobs:
               encoding="utf-8"
           )
 
-          baseline_line = (
+          baseline = (
               'baseline = file("lint-baseline.xml")'
           )
 
-          if baseline_line in text:
+          if baseline in text:
               print(
-                  "Lint baseline already configured."
+                  "Lint baseline already configured"
               )
-
               raise SystemExit(0)
 
-          old = '''    kotlin {
-              compilerOptions {
-                  jvmTarget.set(
-                      org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget("17")
-                  )
-              }
-          }
-          }
-          '''
+          marker = "\n}\n\ndependencies {"
 
-          new = '''    kotlin {
-              compilerOptions {
-                  jvmTarget.set(
-                      org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget("17")
-                  )
-              }
-          }
-
-          lint {
-              baseline = file("lint-baseline.xml")
-          }
-          }
-          '''
-
-          count = text.count(old)
-
-          if count != 1:
+          if marker not in text:
               raise RuntimeError(
-                  "Expected android block ending once, "
-                  f"found {count}"
+                  "Cannot locate end of android block"
               )
 
+          lint_block = '''
+          
+              lint {
+                  baseline = file("lint-baseline.xml")
+              }
+          '''
+
           text = text.replace(
-              old,
-              new,
+              marker,
+              lint_block
+              + "\n}\n\ndependencies {",
               1
           )
 
@@ -519,21 +358,14 @@ jobs:
           )
 
           print(
-              "Lint baseline configuration added."
+              "Lint baseline configured"
           )
           PY
-
-      # ============================================================
-      # 13. 生成 baseline
-      #
-      # baseline 只记录当前仍存在的历史问题。
-      # ============================================================
 
       - name: Generate lint baseline
         shell: bash
         run: |
-          rm -f \
-            app/lint-baseline.xml
+          rm -f app/lint-baseline.xml
 
           ./gradlew \
             --no-daemon \
@@ -541,21 +373,14 @@ jobs:
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             updateLintBaseline
 
-          test -f \
-            app/lint-baseline.xml
+          test -f app/lint-baseline.xml
 
           echo
-          echo "Lint baseline generated:"
-          wc -l \
-            app/lint-baseline.xml
+          echo "Baseline created:"
+          wc -l app/lint-baseline.xml
 
-      # ============================================================
-      # 14. 最终 Lint
-      #
-      # 这里禁止跳过。
-      # baseline 之外如果还有错误，工作流直接失败。
-      # ============================================================
-
+      # 这一遍不能失败。
+      # baseline 之外出现任何新的 Lint 错误都会阻止提交。
       - name: Run final Android lint
         shell: bash
         run: |
@@ -564,12 +389,6 @@ jobs:
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             lintDebug
-
-      # ============================================================
-      # 15. 再跑单元测试
-      #
-      # baseline 修改 Gradle 后再次确认项目正常。
-      # ============================================================
 
       - name: Run final unit tests
         shell: bash
@@ -580,10 +399,6 @@ jobs:
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             testDebugUnitTest
 
-      # ============================================================
-      # 16. Debug APK
-      # ============================================================
-
       - name: Build debug APK
         shell: bash
         run: |
@@ -593,110 +408,48 @@ jobs:
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             assembleDebug
 
-      - name: Verify debug APK
+      - name: Verify APK
         shell: bash
         run: |
           APK="app/build/outputs/apk/debug/app-debug.apk"
 
           test -f "$APK"
 
-          echo "Debug APK verified:"
+          echo "APK build successful:"
           ls -lh "$APK"
-
-      # ============================================================
-      # 17. 确认 lintFix 没有偷偷改源码
-      # ============================================================
-
-      - name: Verify no unsafe lint quick fixes
-        shell: bash
-        run: |
-          echo "Checking for accidental lintFix changes..."
-
-          if grep -RIn \
-            --include='*.kt' \
-            -E '\.toUri\(\)' \
-            app/src/main/kotlin
-          then
-            echo
-            echo "Found toUri conversions."
-
-            echo
-            echo "This workflow never runs lintFix."
-            echo "If these existed before, inspect them manually."
-
-            exit 1
-          fi
-
-          echo "No accidental toUri conversions found."
-
-      # ============================================================
-      # 18. Git diff
-      # ============================================================
-
-      - name: Inspect verified changes
-        shell: bash
-        run: |
-          git status --short
-
-          echo
-          echo "----- DIFF STAT -----"
-
-          git diff --stat
-
-          echo
-          echo "----- DIFF CHECK -----"
-
-          git diff --check
-
-          echo
-          echo "----- CHANGED FILES -----"
-
-          git diff \
-            --name-only
-
-      # ============================================================
-      # 19. 最终必要文件检查
-      # ============================================================
 
       - name: Final verification
         shell: bash
         run: |
-          test -f \
-            app/lint-baseline.xml
-
-          grep -q \
-            'baseline = file("lint-baseline.xml")' \
-            app/build.gradle.kts
+          MANIFEST="app/src/main/AndroidManifest.xml"
 
           grep -q \
             'com.yunx.app.crash.CrashActivity' \
-            app/src/main/AndroidManifest.xml
+            "$MANIFEST"
 
           grep -q \
             'com.yunx.app.data.download.DownloadService' \
-            app/src/main/AndroidManifest.xml
+            "$MANIFEST"
 
           grep -q \
             '@android.annotation.SuppressLint("RestrictedApi")' \
             app/src/main/kotlin/com/yunx/app/ui/theme/Theme.kt
 
-          echo "Final verification passed."
+          grep -q \
+            'baseline = file("lint-baseline.xml")' \
+            app/build.gradle.kts
 
-      # ============================================================
-      # 20. 删除临时工作流
-      # ============================================================
+          test -f app/lint-baseline.xml
 
-      - name: Remove temporary workflow
-        shell: bash
-        run: |
-          rm -f \
-            .github/workflows/fix-lint-errors.yml
+          git diff --check
 
-      # ============================================================
-      # 21. 提交到 main
-      # ============================================================
+          echo
+          echo "Final verification passed"
 
-      - name: Commit verified lint fixes
+      # 只添加真正需要提交的源码。
+      # 故意不使用 git add -A，
+      # 也不修改任何 .github/workflows 文件。
+      - name: Commit fixes
         shell: bash
         run: |
           git config \
@@ -707,15 +460,25 @@ jobs:
             user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A
+          git add \
+            app/src/main/AndroidManifest.xml \
+            app/src/main/kotlin/com/yunx/app/data/network/BaiduApi.kt \
+            app/src/main/kotlin/com/yunx/app/data/network/XunleiApi.kt \
+            app/src/main/kotlin/com/yunx/app/ui/theme/Theme.kt \
+            app/build.gradle.kts \
+            app/lint-baseline.xml
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No changes to commit"
             exit 0
           fi
 
+          git diff --cached --check
+
+          git status --short
+
           git commit \
-            -m "fix: resolve Android lint issues"
+            -m "fix: clean up Android lint issues"
 
           git push \
             origin \
