@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -99,6 +100,7 @@ import com.yunx.app.ui.navigation.MainTab
 import com.yunx.app.ui.screens.AboutScreen
 import com.yunx.app.ui.screens.BookmarkScreen
 import com.yunx.app.ui.screens.DownloadScreen
+import com.yunx.app.ui.screens.DownloadHistoryScreen
 import com.yunx.app.ui.screens.DriveScreen
 import com.yunx.app.ui.screens.OnboardingScreen
 import com.yunx.app.ui.screens.ResolveScreen
@@ -153,6 +155,7 @@ fun MainScreen() {
     var showSupport by rememberSaveable { mutableStateOf(false) }
     var showTheme by rememberSaveable { mutableStateOf(false) }
     var showBookmarks by rememberSaveable { mutableStateOf(false) }
+    var showDownloadHistory by rememberSaveable { mutableStateOf(false) }
     val saveableStateHolder = rememberSaveableStateHolder()
 
     val context = LocalContext.current
@@ -576,6 +579,9 @@ fun MainScreen() {
             actions = {
                 // 解析页标题右上角：收藏网盘链接入口
                 if (currentTab == MainTab.Resolve) {
+                    IconButton(onClick = { showDownloadHistory = true }) {
+                        Icon(Icons.Outlined.History, contentDescription = "下载历史")
+                    }
                     IconButton(onClick = { showBookmarks = true }) {
                         Icon(Icons.Outlined.Bookmarks, contentDescription = "收藏网盘链接")
                     }
@@ -782,6 +788,14 @@ fun MainScreen() {
                 resolveViewModel.startResolve(link, pwd)
             }
         )
+    }
+    AnimatedVisibility(
+        visible = showDownloadHistory,
+        enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.96f),
+        exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.96f),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        DownloadHistoryScreen(viewModel = downloadViewModel, onBack = { showDownloadHistory = false })
     }
     }
 
