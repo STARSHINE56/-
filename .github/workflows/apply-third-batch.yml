@@ -101,7 +101,6 @@ jobs:
 
           # ============================================================
           # 1. 下载页清理
-          #    删除两个“复制直链”
           # ============================================================
 
           download_screen_path = Path(
@@ -556,87 +555,7 @@ jobs:
           )
 
           # ============================================================
-          # 6. Test Build APK 增加 lintDebug
-          #    Lint 会运行，但历史问题不阻止构建
-          # ============================================================
-
-          test_path = Path(
-              ".github/workflows/test-build.yml"
-          )
-
-          test_workflow = test_path.read_text(
-              encoding="utf-8"
-          )
-
-          if "lintDebug" not in test_workflow:
-              build_marker = '''      - name: Build debug APK
-                  shell: bash
-                  run: |
-                    ./gradlew \\
-                      --no-daemon \\
-                      --console=plain \\
-                      -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \\
-                      assembleDebug
-          '''
-
-              lint_build = '''      - name: Run Android lint
-                  shell: bash
-                  continue-on-error: true
-                  run: |
-                    ./gradlew \\
-                      --no-daemon \\
-                      --console=plain \\
-                      -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \\
-                      lintDebug
-
-                - name: Build debug APK
-                  shell: bash
-                  run: |
-                    ./gradlew \\
-                      --no-daemon \\
-                      --console=plain \\
-                      -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \\
-                      assembleDebug
-          '''
-
-              test_workflow = replace_once(
-                  test_workflow,
-                  build_marker,
-                  lint_build,
-                  "Add non-blocking lintDebug to Test Build"
-              )
-
-          else:
-              # 如果之前已经有 lintDebug，
-              # 确保它不会阻止构建
-              if "continue-on-error: true" not in test_workflow:
-                  test_workflow = test_workflow.replace(
-                      "      - name: Run Android lint\n"
-                      "        shell: bash\n"
-                      "        run: |\n",
-                      "      - name: Run Android lint\n"
-                      "        shell: bash\n"
-                      "        continue-on-error: true\n"
-                      "        run: |\n",
-                      1
-                  )
-
-                  print(
-                      "OK: lintDebug changed to non-blocking"
-                  )
-
-              else:
-                  print(
-                      "OK: non-blocking lintDebug already exists"
-                  )
-
-          test_path.write_text(
-              test_workflow,
-              encoding="utf-8"
-          )
-
-          # ============================================================
-          # 7. 文案和注释清理
+          # 6. 文案和注释清理
           # ============================================================
 
           roots = [
@@ -707,7 +626,7 @@ jobs:
           )
 
           # ============================================================
-          # 8. 自检
+          # 7. 自检
           # ============================================================
 
           download_check = (
@@ -781,20 +700,6 @@ jobs:
                   "History time formatter missing"
               )
 
-          test_check = test_path.read_text(
-              encoding="utf-8"
-          )
-
-          if "lintDebug" not in test_check:
-              raise RuntimeError(
-                  "lintDebug missing"
-              )
-
-          if "continue-on-error: true" not in test_check:
-              raise RuntimeError(
-                  "lintDebug is still blocking"
-              )
-
           print(
               "Third batch source patch completed."
           )
@@ -826,9 +731,6 @@ jobs:
               Path(
                   "app/src/main/kotlin/com/yunx/app/ui/screens/"
                   "ResolveScreen.kt"
-              ),
-              Path(
-                  ".github/workflows/test-build.yml"
               ),
           ]
 
@@ -971,17 +873,6 @@ jobs:
           grep -q \
             'formatHistoryTime' \
             app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt
-
-          echo
-          echo "Checking permanent lint workflow..."
-
-          grep -q \
-            'lintDebug' \
-            .github/workflows/test-build.yml
-
-          grep -q \
-            'continue-on-error: true' \
-            .github/workflows/test-build.yml
 
           echo
           echo "Checking Mobile Cloud wording..."
