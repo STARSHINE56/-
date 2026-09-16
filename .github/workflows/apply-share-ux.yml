@@ -206,7 +206,7 @@ jobs:
 
           replace_once(
               """                    onClearPwd = { pwd = "" }
-                  )
+                )
           """,
               """                    onClearPwd = { pwd = "" },
                       recentHistory = recentHistory,
