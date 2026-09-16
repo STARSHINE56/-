@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -53,6 +54,9 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -63,6 +67,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -772,6 +777,8 @@ fun ResolveScreen(
 /**
  * 解析输入页
  */
+
+@Suppress("UNUSED_PARAMETER")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ResolveInputContent(
@@ -802,7 +809,6 @@ private fun ResolveInputContent(
 
     onShowAllHistory: () -> Unit,
 
-
     onClearHistory: () -> Unit
 ) {
     val isLoading =
@@ -821,62 +827,27 @@ private fun ResolveInputContent(
                 )
                 .padding(
                     horizontal = 16.dp,
-                    vertical = 12.dp
+                    vertical = 14.dp
                 ),
 
         verticalArrangement =
-            Arrangement.spacedBy(14.dp)
+            Arrangement.spacedBy(
+                20.dp
+            )
     ) {
 
-        // -----------------------------
-        // 页面说明
-        // -----------------------------
-
-        Column(
-            verticalArrangement =
-                Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text =
-                    "粘贴分享链接",
-
-                style =
-                    MaterialTheme
-                        .typography
-                        .titleMedium,
-
-                fontWeight =
-                    FontWeight.SemiBold
-            )
-
-            Text(
-                text =
-                    "支持夸克、百度、迅雷、UC、123、移动云盘",
-
-                style =
-                    MaterialTheme
-                        .typography
-                        .bodySmall,
-
-                color =
-                    MaterialTheme
-                        .colorScheme
-                        .onSurfaceVariant
-            )
-        }
-
-        // -----------------------------
-        // 分享链接主卡片
-        // -----------------------------
+        // ==================================================
+        // 主解析卡片
+        // ==================================================
 
         Card(
             modifier =
                 Modifier.fillMaxWidth(),
 
             shape =
-                MaterialTheme
-                    .shapes
-                    .extraLarge,
+                RoundedCornerShape(
+                    28.dp
+                ),
 
             colors =
                 CardDefaults.cardColors(
@@ -884,15 +855,30 @@ private fun ResolveInputContent(
                         MaterialTheme
                             .colorScheme
                             .surfaceContainerLow
+                ),
+
+            elevation =
+                CardDefaults.cardElevation(
+                    defaultElevation =
+                        2.dp
                 )
         ) {
             Column(
                 modifier =
-                    Modifier.padding(14.dp),
+                    Modifier.padding(
+                        horizontal = 18.dp,
+                        vertical = 20.dp
+                    ),
 
                 verticalArrangement =
-                    Arrangement.spacedBy(10.dp)
+                    Arrangement.spacedBy(
+                        16.dp
+                    )
             ) {
+
+                // ------------------------------------------
+                // 分享链接标题
+                // ------------------------------------------
 
                 Row(
                     modifier =
@@ -901,82 +887,152 @@ private fun ResolveInputContent(
                     verticalAlignment =
                         Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector =
-                            Icons.Outlined.Link,
 
-                        contentDescription =
-                            null,
+                    Box(
+                        modifier =
+                            Modifier.size(
+                                42.dp
+                            ),
 
-                        tint =
-                            MaterialTheme
-                                .colorScheme
-                                .primary
-                    )
+                        contentAlignment =
+                            Alignment.Center
+                    ) {
+                        Card(
+                            shape =
+                                RoundedCornerShape(
+                                    14.dp
+                                ),
+
+                            colors =
+                                CardDefaults.cardColors(
+                                    containerColor =
+                                        MaterialTheme
+                                            .colorScheme
+                                            .primaryContainer
+                                )
+                        ) {
+                            Box(
+                                modifier =
+                                    Modifier.size(
+                                        42.dp
+                                    ),
+
+                                contentAlignment =
+                                    Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector =
+                                        Icons.Outlined.Link,
+
+                                    contentDescription =
+                                        null,
+
+                                    tint =
+                                        MaterialTheme
+                                            .colorScheme
+                                            .primary,
+
+                                    modifier =
+                                        Modifier.size(
+                                            23.dp
+                                        )
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(
                         modifier =
-                            Modifier.width(8.dp)
+                            Modifier.width(
+                                12.dp
+                            )
                     )
 
                     Text(
                         text =
                             "分享链接",
 
-                        modifier =
-                            Modifier.weight(1f),
-
                         style =
                             MaterialTheme
                                 .typography
-                                .titleSmall,
+                                .titleLarge,
 
                         fontWeight =
-                            FontWeight.Medium
+                            FontWeight.SemiBold
                     )
-
-                    if (
-                        link.isNotEmpty()
-                    ) {
-                        IconButton(
-                            onClick =
-                                onClearLink
-                        ) {
-                            Icon(
-                                imageVector =
-                                    Icons.Filled.Close,
-
-                                contentDescription =
-                                    "清空链接"
-                            )
-                        }
-                    }
                 }
 
-                OutlinedTextField(
-                    value =
-                        link,
+                // ------------------------------------------
+                // 链接大输入区
+                // ------------------------------------------
 
-                    onValueChange =
-                        onLinkChange,
-
+                Box(
                     modifier =
-                        Modifier.fillMaxWidth(),
+                        Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value =
+                            link,
 
-                    placeholder = {
-                        Text(
-                            "粘贴网盘分享链接"
-                        )
-                    },
+                        onValueChange =
+                            onLinkChange,
 
-                    minLines = 3,
-                    maxLines = 5,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(
+                                    min = 160.dp
+                                ),
 
-                    shape =
-                        MaterialTheme
-                            .shapes
-                            .large
-                )
+                        placeholder = {
+                            Text(
+                                text =
+                                    "粘贴网盘分享链接……",
+
+                                style =
+                                    MaterialTheme
+                                        .typography
+                                        .bodyLarge,
+
+                                color =
+                                    MaterialTheme
+                                        .colorScheme
+                                        .onSurfaceVariant
+                            )
+                        },
+
+                        trailingIcon = {
+                            if (
+                                link.isNotEmpty()
+                            ) {
+                                IconButton(
+                                    onClick =
+                                        onClearLink
+                                ) {
+                                    Icon(
+                                        imageVector =
+                                            Icons.Filled.Close,
+
+                                        contentDescription =
+                                            "清空链接"
+                                    )
+                                }
+                            }
+                        },
+
+                        minLines = 5,
+                        maxLines = 7,
+
+                        shape =
+                            RoundedCornerShape(
+                                22.dp
+                            )
+                    )
+                }
+
+                // ------------------------------------------
+                // 粘贴按钮
+                // ------------------------------------------
 
                 Row(
                     modifier =
@@ -990,289 +1046,206 @@ private fun ResolveInputContent(
                 ) {
                     FilledTonalButton(
                         onClick =
-                            onPasteClipboard
+                            onPasteClipboard,
+
+                        shape =
+                            RoundedCornerShape(
+                                18.dp
+                            )
                     ) {
                         Icon(
                             imageVector =
-                                Icons.Outlined
-                                    .ContentPaste,
+                                Icons.Outlined.ContentPaste,
 
                             contentDescription =
                                 null,
 
                             modifier =
-                                Modifier.size(18.dp)
+                                Modifier.size(
+                                    18.dp
+                                )
                         )
 
                         Spacer(
                             modifier =
-                                Modifier.width(6.dp)
+                                Modifier.width(
+                                    6.dp
+                                )
                         )
 
                         Text(
-                            "粘贴"
+                            text =
+                                "粘贴",
+
+                            fontWeight =
+                                FontWeight.Medium
                         )
                     }
                 }
-            }
-        }
 
-        // -----------------------------
-        // 提取码
-        // -----------------------------
+                // ------------------------------------------
+                // 提取码
+                // ------------------------------------------
 
-        OutlinedTextField(
-            value =
-                pwd,
+                OutlinedTextField(
+                    value =
+                        pwd,
 
-            onValueChange =
-                onPwdChange,
+                    onValueChange =
+                        onPwdChange,
 
-            modifier =
-                Modifier.fillMaxWidth(),
-
-            label = {
-                Text(
-                    "提取码（可选）"
-                )
-            },
-
-            placeholder = {
-                Text(
-                    "自动识别或手动输入"
-                )
-            },
-
-            trailingIcon = {
-                if (
-                    pwd.isNotEmpty()
-                ) {
-                    IconButton(
-                        onClick =
-                            onClearPwd
-                    ) {
-                        Icon(
-                            imageVector =
-                                Icons.Filled.Close,
-
-                            contentDescription =
-                                "清空提取码"
-                        )
-                    }
-                }
-            },
-
-            singleLine = true,
-
-            shape =
-                MaterialTheme
-                    .shapes
-                    .large
-        )
-
-        // -----------------------------
-        // 开始解析按钮
-        // -----------------------------
-
-        Button(
-            onClick = {
-                onStartResolve(
-                    link,
-                    pwd.ifBlank {
-                        null
-                    }
-                )
-            },
-
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(54.dp),
-
-            enabled =
-                link.isNotBlank() &&
-                    !isLoading,
-
-            shape =
-                MaterialTheme
-                    .shapes
-                    .large
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier =
-                        Modifier.size(18.dp),
-
-                    strokeWidth =
-                        2.dp
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.width(8.dp)
-                )
-
-                Text(
-                    "解析中…"
-                )
-            } else {
-                Text(
-                    text =
-                        "开始解析",
-
-                    style =
-                        MaterialTheme
-                            .typography
-                            .titleSmall,
-
-                    fontWeight =
-                        FontWeight.SemiBold
-                )
-            }
-        }
-
-        // -----------------------------
-        // 最近解析
-        // -----------------------------
-
-        if (
-            recentHistory
-                .isNotEmpty()
-        ) {
-            Column(
-                verticalArrangement =
-                    Arrangement.spacedBy(
-                        8.dp
-                    )
-            ) {
-
-                Row(
                     modifier =
                         Modifier.fillMaxWidth(),
 
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-                    Text(
-                        text =
-                            "最近解析",
+                    leadingIcon = {
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.Lock,
 
-                        modifier =
-                            Modifier.weight(1f),
-
-                        style =
-                            MaterialTheme
-                                .typography
-                                .titleMedium,
-
-                        fontWeight =
-                            FontWeight.SemiBold
-                    )
-            TextButton(
-                onClick =
-                    onShowAllHistory
-            ) {
-                Text(
-                    "查看全部"
-                )
-            }
-
-
-
-                    TextButton(
-                        onClick =
-                            onClearHistory
-                    ) {
-                        Text(
-                            "清空"
+                            contentDescription =
+                                null
                         )
-                    }
-                }
+                    },
 
-                recentHistory
-                    .take(3)
-                    .forEach {
-                            item ->
+                    label = {
+                        Text(
+                            "提取码（可选）"
+                        )
+                    },
 
-                        HistoryCard(
-                            item =
-                                item,
+                    placeholder = {
+                        Text(
+                            "自动识别，可手动修改"
+                        )
+                    },
 
-                            onClick = {
-                                onHistorySelect(
-                                    item
+                    trailingIcon = {
+                        if (
+                            pwd.isNotEmpty()
+                        ) {
+                            IconButton(
+                                onClick =
+                                    onClearPwd
+                            ) {
+                                Icon(
+                                    imageVector =
+                                        Icons.Filled.Close,
+
+                                    contentDescription =
+                                        "清空提取码"
                                 )
                             }
+                        }
+                    },
+
+                    singleLine = true,
+
+                    shape =
+                        RoundedCornerShape(
+                            20.dp
                         )
-                    }
+                )
 
-            }
-        } else {
+                // ------------------------------------------
+                // 开始解析
+                // ------------------------------------------
 
-            // -----------------------------
-            // 没有历史时显示支持平台
-            // -----------------------------
+                Button(
+                    onClick = {
+                        onStartResolve(
+                            link,
+                            pwd.ifBlank {
+                                null
+                            }
+                        )
+                    },
 
-            Card(
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                shape =
-                    MaterialTheme
-                        .shapes
-                        .large,
-
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor =
-                            MaterialTheme
-                                .colorScheme
-                                .surfaceContainerLow
-                    )
-            ) {
-                Column(
                     modifier =
-                        Modifier.padding(14.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .height(
+                                58.dp
+                            ),
 
-                    verticalArrangement =
-                        Arrangement.spacedBy(
-                            6.dp
+                    enabled =
+                        link.isNotBlank() &&
+                            !isLoading,
+
+                    shape =
+                        RoundedCornerShape(
+                            20.dp
                         )
                 ) {
-                    Text(
-                        text =
-                            "支持网盘",
+                    if (
+                        isLoading
+                    ) {
+                        CircularProgressIndicator(
+                            modifier =
+                                Modifier.size(
+                                    20.dp
+                                ),
 
-                        style =
-                            MaterialTheme
-                                .typography
-                                .titleSmall,
+                            strokeWidth =
+                                2.dp
+                        )
 
-                        fontWeight =
-                            FontWeight.Medium
-                    )
+                        Spacer(
+                            modifier =
+                                Modifier.width(
+                                    10.dp
+                                )
+                        )
 
-                    Text(
-                        text =
-                            "夸克 · 百度 · 迅雷 · UC · 123 · 移动云盘",
+                        Text(
+                            text =
+                                "解析中…",
 
-                        style =
-                            MaterialTheme
-                                .typography
-                                .bodySmall,
+                            style =
+                                MaterialTheme
+                                    .typography
+                                    .titleMedium,
 
-                        color =
-                            MaterialTheme
-                                .colorScheme
-                                .onSurfaceVariant
-                    )
+                            fontWeight =
+                                FontWeight.SemiBold
+                        )
+                    } else {
+                        Text(
+                            text =
+                                "开始解析",
+
+                            style =
+                                MaterialTheme
+                                    .typography
+                                    .titleMedium,
+
+                            fontWeight =
+                                FontWeight.SemiBold
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(
+                                    8.dp
+                                )
+                        )
+
+                        Text(
+                            text =
+                                "→",
+
+                            style =
+                                MaterialTheme
+                                    .typography
+                                    .titleLarge
+                        )
+                    }
                 }
             }
         }
 
-        // -----------------------------
+        // ==================================================
         // 错误提示
-        // -----------------------------
+        // ==================================================
 
         if (
             state is
@@ -1281,6 +1254,11 @@ private fun ResolveInputContent(
             Card(
                 modifier =
                     Modifier.fillMaxWidth(),
+
+                shape =
+                    RoundedCornerShape(
+                        20.dp
+                    ),
 
                 colors =
                     CardDefaults.cardColors(
@@ -1292,15 +1270,16 @@ private fun ResolveInputContent(
             ) {
                 Row(
                     modifier =
-                        Modifier.padding(12.dp),
+                        Modifier.padding(
+                            14.dp
+                        ),
 
                     verticalAlignment =
                         Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector =
-                            Icons.Outlined
-                                .ErrorOutline,
+                            Icons.Outlined.ErrorOutline,
 
                         contentDescription =
                             null,
@@ -1313,7 +1292,9 @@ private fun ResolveInputContent(
 
                     Spacer(
                         modifier =
-                            Modifier.width(8.dp)
+                            Modifier.width(
+                                10.dp
+                            )
                     )
 
                     Text(
@@ -1334,12 +1315,439 @@ private fun ResolveInputContent(
             }
         }
 
+        // ==================================================
+        // 最近解析
+        // ==================================================
+
+        if (
+            recentHistory.isNotEmpty()
+        ) {
+
+            Column(
+                verticalArrangement =
+                    Arrangement.spacedBy(
+                        10.dp
+                    )
+            ) {
+
+                Row(
+                    modifier =
+                        Modifier.fillMaxWidth(),
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+
+                    Icon(
+                        imageVector =
+                            Icons.Outlined.History,
+
+                        contentDescription =
+                            null,
+
+                        tint =
+                            MaterialTheme
+                                .colorScheme
+                                .onSurfaceVariant,
+
+                        modifier =
+                            Modifier.size(
+                                23.dp
+                            )
+                    )
+
+                    Spacer(
+                        modifier =
+                            Modifier.width(
+                                9.dp
+                            )
+                    )
+
+                    Text(
+                        text =
+                            "最近解析",
+
+                        modifier =
+                            Modifier.weight(
+                                1f
+                            ),
+
+                        style =
+                            MaterialTheme
+                                .typography
+                                .titleLarge,
+
+                        fontWeight =
+                            FontWeight.SemiBold
+                    )
+
+                    TextButton(
+                        onClick =
+                            onShowAllHistory
+                    ) {
+                        Text(
+                            text =
+                                "查看全部",
+
+                            fontWeight =
+                                FontWeight.Medium
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(
+                                    2.dp
+                                )
+                        )
+
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.ChevronRight,
+
+                            contentDescription =
+                                null,
+
+                            modifier =
+                                Modifier.size(
+                                    18.dp
+                                )
+                        )
+                    }
+                }
+
+                RecentHistoryCard(
+                    items =
+                        recentHistory.take(
+                            2
+                        ),
+
+                    onItemClick =
+                        onHistorySelect
+                )
+            }
+        } else {
+
+            // 没有历史时保持干净，不再展示支持平台卡片
+            Text(
+                text =
+                    "解析过的分享链接会显示在这里",
+
+                style =
+                    MaterialTheme
+                        .typography
+                        .bodySmall,
+
+                color =
+                    MaterialTheme
+                        .colorScheme
+                        .onSurfaceVariant,
+
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 4.dp,
+                            vertical = 2.dp
+                        )
+            )
+        }
+
         Spacer(
             modifier =
-                Modifier.height(8.dp)
+                Modifier.height(
+                    8.dp
+                )
         )
     }
 }
+
+
+@Composable
+private fun RecentHistoryCard(
+    items: List<ResolveHistoryItem>,
+    onItemClick: (
+        ResolveHistoryItem
+    ) -> Unit
+) {
+    Card(
+        modifier =
+            Modifier.fillMaxWidth(),
+
+        shape =
+            RoundedCornerShape(
+                26.dp
+            ),
+
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    MaterialTheme
+                        .colorScheme
+                        .surfaceContainerLow
+            ),
+
+        elevation =
+            CardDefaults.cardElevation(
+                defaultElevation =
+                    1.dp
+            )
+    ) {
+        Column(
+            modifier =
+                Modifier.fillMaxWidth()
+        ) {
+            items.forEachIndexed {
+                    index,
+                    item ->
+
+                RecentHistoryRow(
+                    item =
+                        item,
+
+                    onClick = {
+                        onItemClick(
+                            item
+                        )
+                    }
+                )
+
+                if (
+                    index <
+                        items.lastIndex
+                ) {
+                    HorizontalDivider(
+                        modifier =
+                            Modifier.padding(
+                                start = 68.dp,
+                                end = 16.dp
+                            ),
+
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .outlineVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun RecentHistoryRow(
+    item: ResolveHistoryItem,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick =
+            onClick,
+
+        modifier =
+            Modifier.fillMaxWidth(),
+
+        shape =
+            RoundedCornerShape(
+                0.dp
+            ),
+
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    MaterialTheme
+                        .colorScheme
+                        .surfaceContainerLow
+            ),
+
+        elevation =
+            CardDefaults.cardElevation(
+                defaultElevation =
+                    0.dp
+            )
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = 16.dp,
+                        vertical = 15.dp
+                    ),
+
+            verticalAlignment =
+                Alignment.CenterVertically
+        ) {
+
+            Card(
+                shape =
+                    RoundedCornerShape(
+                        16.dp
+                    ),
+
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor =
+                            MaterialTheme
+                                .colorScheme
+                                .primaryContainer
+                    )
+            ) {
+                Box(
+                    modifier =
+                        Modifier.size(
+                            46.dp
+                        ),
+
+                    contentAlignment =
+                        Alignment.Center
+                ) {
+                    Icon(
+                        imageVector =
+                            Icons.Outlined.Link,
+
+                        contentDescription =
+                            null,
+
+                        tint =
+                            MaterialTheme
+                                .colorScheme
+                                .primary,
+
+                        modifier =
+                            Modifier.size(
+                                24.dp
+                            )
+                    )
+                }
+            }
+
+            Spacer(
+                modifier =
+                    Modifier.width(
+                        12.dp
+                    )
+            )
+
+            Column(
+                modifier =
+                    Modifier.weight(
+                        1f
+                    ),
+
+                verticalArrangement =
+                    Arrangement.spacedBy(
+                        3.dp
+                    )
+            ) {
+
+                Text(
+                    text =
+                        buildString {
+                            append(
+                                item.platformName
+                            )
+
+                            if (
+                                item.password
+                                    .isNotBlank()
+                            ) {
+                                append(
+                                    " · "
+                                )
+
+                                append(
+                                    item.password
+                                )
+                            }
+                        },
+
+                    style =
+                        MaterialTheme
+                            .typography
+                            .titleSmall,
+
+                    fontWeight =
+                        FontWeight.SemiBold,
+
+                    maxLines = 1,
+
+                    overflow =
+                        TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text =
+                        item.link,
+
+                    style =
+                        MaterialTheme
+                            .typography
+                            .bodySmall,
+
+                    color =
+                        MaterialTheme
+                            .colorScheme
+                            .onSurfaceVariant,
+
+                    maxLines = 1,
+
+                    overflow =
+                        TextOverflow.Ellipsis
+                )
+
+                val historyTime =
+                    formatHistoryTime(
+                        item.timestamp
+                    )
+
+                if (
+                    historyTime.isNotBlank()
+                ) {
+                    Text(
+                        text =
+                            historyTime,
+
+                        style =
+                            MaterialTheme
+                                .typography
+                                .labelSmall,
+
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .outline
+                    )
+                }
+            }
+
+            Spacer(
+                modifier =
+                    Modifier.width(
+                        8.dp
+                    )
+            )
+
+            Icon(
+                imageVector =
+                    Icons.Outlined.ChevronRight,
+
+                contentDescription =
+                    null,
+
+                tint =
+                    MaterialTheme
+                        .colorScheme
+                        .onSurfaceVariant,
+
+                modifier =
+                    Modifier.size(
+                        22.dp
+                    )
+            )
+        }
+    }
+}
+
 
 /**
  * 将解析时间转换为简短的相对时间。
