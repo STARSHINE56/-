@@ -277,16 +277,9 @@ jobs:
               val pan123LoginState =
                   _pan123LoginState.asStateFlow()
 
-              /** 是否正在刷新。 */
               val loading =
                   MutableStateFlow(false)
 
-              /**
-               * 并发检测全部平台。
-               *
-               * 没有保存凭证的平台显示未登录；
-               * 有凭证但接口调用失败的平台显示“登录可能已失效”。
-               */
               fun loadAll() {
                   if (loading.value) {
                       return
@@ -297,7 +290,6 @@ jobs:
                   viewModelScope.launch {
                       try {
                           coroutineScope {
-                              // 夸克
                               launch {
                                   val cookie =
                                       runCatching {
@@ -305,9 +297,7 @@ jobs:
                                       }.getOrNull()
 
                                   if (cookie.isNullOrBlank()) {
-                                      _quarkQuota.value =
-                                          null
-
+                                      _quarkQuota.value = null
                                       _quarkLoginState.value =
                                           DriveLoginState.LOGGED_OUT
 
@@ -318,25 +308,18 @@ jobs:
                                       DriveLoginState.CHECKING
 
                                   runCatching {
-                                      quarkApi.getQuota(
-                                          cookie
-                                      )
+                                      quarkApi.getQuota(cookie)
                                   }.onSuccess {
-                                      _quarkQuota.value =
-                                          it
-
+                                      _quarkQuota.value = it
                                       _quarkLoginState.value =
                                           DriveLoginState.HEALTHY
                                   }.onFailure {
-                                      _quarkQuota.value =
-                                          null
-
+                                      _quarkQuota.value = null
                                       _quarkLoginState.value =
                                           DriveLoginState.SUSPECT
                                   }
                               }
 
-                              // UC
                               launch {
                                   val cookie =
                                       runCatching {
@@ -344,9 +327,7 @@ jobs:
                                       }.getOrNull()
 
                                   if (cookie.isNullOrBlank()) {
-                                      _ucQuota.value =
-                                          null
-
+                                      _ucQuota.value = null
                                       _ucLoginState.value =
                                           DriveLoginState.LOGGED_OUT
 
@@ -357,25 +338,18 @@ jobs:
                                       DriveLoginState.CHECKING
 
                                   runCatching {
-                                      ucApi.getQuota(
-                                          cookie
-                                      )
+                                      ucApi.getQuota(cookie)
                                   }.onSuccess {
-                                      _ucQuota.value =
-                                          it
-
+                                      _ucQuota.value = it
                                       _ucLoginState.value =
                                           DriveLoginState.HEALTHY
                                   }.onFailure {
-                                      _ucQuota.value =
-                                          null
-
+                                      _ucQuota.value = null
                                       _ucLoginState.value =
                                           DriveLoginState.SUSPECT
                                   }
                               }
 
-                              // 迅雷
                               launch {
                                   val token =
                                       runCatching {
@@ -383,9 +357,7 @@ jobs:
                                       }.getOrNull()
 
                                   if (token.isNullOrBlank()) {
-                                      _xunleiQuota.value =
-                                          null
-
+                                      _xunleiQuota.value = null
                                       _xunleiLoginState.value =
                                           DriveLoginState.LOGGED_OUT
 
@@ -414,21 +386,16 @@ jobs:
                                           captcha
                                       )
                                   }.onSuccess {
-                                      _xunleiQuota.value =
-                                          it
-
+                                      _xunleiQuota.value = it
                                       _xunleiLoginState.value =
                                           DriveLoginState.HEALTHY
                                   }.onFailure {
-                                      _xunleiQuota.value =
-                                          null
-
+                                      _xunleiQuota.value = null
                                       _xunleiLoginState.value =
                                           DriveLoginState.SUSPECT
                                   }
                               }
 
-                              // 百度
                               launch {
                                   val cookie =
                                       runCatching {
@@ -436,9 +403,7 @@ jobs:
                                       }.getOrNull()
 
                                   if (cookie.isNullOrBlank()) {
-                                      _baiduQuota.value =
-                                          null
-
+                                      _baiduQuota.value = null
                                       _baiduLoginState.value =
                                           DriveLoginState.LOGGED_OUT
 
@@ -449,25 +414,18 @@ jobs:
                                       DriveLoginState.CHECKING
 
                                   runCatching {
-                                      baiduApi.getQuota(
-                                          cookie
-                                      )
+                                      baiduApi.getQuota(cookie)
                                   }.onSuccess {
-                                      _baiduQuota.value =
-                                          it
-
+                                      _baiduQuota.value = it
                                       _baiduLoginState.value =
                                           DriveLoginState.HEALTHY
                                   }.onFailure {
-                                      _baiduQuota.value =
-                                          null
-
+                                      _baiduQuota.value = null
                                       _baiduLoginState.value =
                                           DriveLoginState.SUSPECT
                                   }
                               }
 
-                              // 移动云盘
                               launch {
                                   val cookie =
                                       runCatching {
@@ -475,9 +433,7 @@ jobs:
                                       }.getOrNull()
 
                                   if (cookie.isNullOrBlank()) {
-                                      _c139Quota.value =
-                                          null
-
+                                      _c139Quota.value = null
                                       _c139LoginState.value =
                                           DriveLoginState.LOGGED_OUT
 
@@ -488,25 +444,18 @@ jobs:
                                       DriveLoginState.CHECKING
 
                                   runCatching {
-                                      c139Api.getQuota(
-                                          cookie
-                                      )
+                                      c139Api.getQuota(cookie)
                                   }.onSuccess {
-                                      _c139Quota.value =
-                                          it
-
+                                      _c139Quota.value = it
                                       _c139LoginState.value =
                                           DriveLoginState.HEALTHY
                                   }.onFailure {
-                                      _c139Quota.value =
-                                          null
-
+                                      _c139Quota.value = null
                                       _c139LoginState.value =
                                           DriveLoginState.SUSPECT
                                   }
                               }
 
-                              // 123 云盘
                               launch {
                                   val token =
                                       runCatching {
@@ -514,9 +463,7 @@ jobs:
                                       }.getOrNull()
 
                                   if (token.isNullOrBlank()) {
-                                      _pan123Quota.value =
-                                          null
-
+                                      _pan123Quota.value = null
                                       _pan123LoginState.value =
                                           DriveLoginState.LOGGED_OUT
 
@@ -527,27 +474,20 @@ jobs:
                                       DriveLoginState.CHECKING
 
                                   runCatching {
-                                      pan123Api.getQuota(
-                                          token
-                                      )
+                                      pan123Api.getQuota(token)
                                   }.onSuccess {
-                                      _pan123Quota.value =
-                                          it
-
+                                      _pan123Quota.value = it
                                       _pan123LoginState.value =
                                           DriveLoginState.HEALTHY
                                   }.onFailure {
-                                      _pan123Quota.value =
-                                          null
-
+                                      _pan123Quota.value = null
                                       _pan123LoginState.value =
                                           DriveLoginState.SUSPECT
                                   }
                               }
                           }
                       } finally {
-                          loading.value =
-                              false
+                          loading.value = false
                       }
                   }
               }
@@ -612,7 +552,7 @@ jobs:
 
           # ============================================================
           # 3. DriveScreen：
-          #    卡片显示 检测中 / 状态正常 / 登录可能已失效
+          #    卡片显示账号健康状态
           # ============================================================
 
           drive_path = Path(
@@ -637,7 +577,7 @@ jobs:
               "driveQuotaViewModel.loading.collectAsState()\n"
           )
 
-          health_collectors = r'''
+          health_collectors = '''
 
               val quarkLoginState by
                   driveQuotaViewModel
@@ -673,8 +613,7 @@ jobs:
           drive = replace_exact(
               drive,
               refresh_anchor,
-              refresh_anchor +
-                  health_collectors,
+              refresh_anchor + health_collectors,
               "Collect account health states"
           )
 
@@ -712,7 +651,6 @@ jobs:
                   f"Inject {state_name}"
               )
 
-          # DriveAccountCard 增加 loginState 参数
           drive = replace_regex(
               drive,
               r'''
@@ -732,7 +670,6 @@ jobs:
               re.VERBOSE
           )
 
-          # 向 DriveAccountCardContent 传递 loginState
           drive = replace_regex(
               drive,
               r'''
@@ -748,7 +685,6 @@ jobs:
               re.VERBOSE
           )
 
-          # DriveAccountCardContent 增加参数
           drive = replace_regex(
               drive,
               r'''
@@ -764,7 +700,6 @@ jobs:
               re.VERBOSE
           )
 
-          # 在账号描述后加入健康状态
           description_pattern = r'''
               (
               Text\(
@@ -845,11 +780,7 @@ jobs:
 
           # ============================================================
           # 4. ResolveScreen：
-          #    - 查看全部
-          #    - 搜索历史
-          #    - 单条删除
-          #    - 再次解析
-          #    - 清空全部
+          #    完整历史管理
           # ============================================================
 
           resolve_path = Path(
@@ -861,7 +792,6 @@ jobs:
               encoding="utf-8"
           )
 
-          # heightIn
           resolve = replace_exact(
               resolve,
               "import androidx.compose.foundation.layout.height\n",
@@ -870,7 +800,6 @@ jobs:
               "Import heightIn"
           )
 
-          # 图标
           resolve = replace_exact(
               resolve,
               "import androidx.compose.material.icons.outlined.ContentPaste\n"
@@ -882,7 +811,6 @@ jobs:
               "Import history icons"
           )
 
-          # 历史管理窗口状态
           resolve = replace_regex(
               resolve,
               r'''
@@ -903,7 +831,6 @@ jobs:
               re.VERBOSE
           )
 
-          # ResolveInputContent 调用处增加 onShowAllHistory
           resolve = replace_regex(
               resolve,
               r'''
@@ -922,7 +849,6 @@ jobs:
               re.VERBOSE
           )
 
-          # 函数参数增加 onShowAllHistory
           resolve = replace_regex(
               resolve,
               r'''
@@ -943,7 +869,6 @@ jobs:
               re.VERBOSE
           )
 
-          # “最近解析”右侧增加查看全部
           clear_button = r'''
               (
               \s*TextButton\(
@@ -975,7 +900,6 @@ jobs:
               re.VERBOSE
           )
 
-          # 删除旧的“仅显示最近3条”文字
           resolve = replace_regex(
               resolve,
               r'''
@@ -994,29 +918,21 @@ jobs:
               re.VERBOSE
           )
 
-          # 在获取下载链接弹窗之前挂载历史管理窗口
-          load_dialog_marker = r'''
-              // -----------------------------
+          load_dialog_marker = '''    // -----------------------------
               // 获取下载链接加载弹窗
               // -----------------------------
           '''
 
-          history_manager_call = r'''    if (showHistoryManager) {
+          history_manager_call = '''    if (showHistoryManager) {
               HistoryManagerDialog(
                   items = recentHistory,
 
                   onSelect = { item ->
-                      showHistoryManager =
-                          false
+                      showHistoryManager = false
 
-                      link =
-                          item.link
-
-                      pwd =
-                          item.password
-
-                      pwdEdited =
-                          true
+                      link = item.link
+                      pwd = item.password
+                      pwdEdited = true
 
                       resolveAndRemember(
                           item.link,
@@ -1035,17 +951,12 @@ jobs:
 
                   onClearAll = {
                       historyRepository.clear()
-
-                      recentHistory =
-                          emptyList()
-
-                      showHistoryManager =
-                          false
+                      recentHistory = emptyList()
+                      showHistoryManager = false
                   },
 
                   onDismiss = {
-                      showHistoryManager =
-                          false
+                      showHistoryManager = false
                   }
               )
           }
@@ -1062,7 +973,6 @@ jobs:
               "Mount history manager dialog"
           )
 
-          # 在 LoadingContent 前插入完整历史管理 UI
           loading_marker = '''/**
            * 全屏加载
            */
@@ -1070,7 +980,7 @@ jobs:
           private fun LoadingContent() {
           '''
 
-          history_dialog_code = r'''/**
+          history_dialog_code = '''/**
            * 完整解析历史管理。
            */
           @Composable
@@ -1159,8 +1069,7 @@ jobs:
                                   )
                               },
 
-                              singleLine =
-                                  true,
+                              singleLine = true,
 
                               shape =
                                   MaterialTheme
@@ -1175,14 +1084,10 @@ jobs:
                                   )
                           )
 
-                          if (
-                              filtered.isEmpty()
-                          ) {
+                          if (filtered.isEmpty()) {
                               Text(
                                   text =
-                                      if (
-                                          items.isEmpty()
-                                      ) {
+                                      if (items.isEmpty()) {
                                           "暂无解析历史"
                                       } else {
                                           "没有找到匹配的记录"
@@ -1219,14 +1124,10 @@ jobs:
                                           8.dp
                                       )
                               ) {
-                                  filtered.forEach {
-                                          item ->
-
+                                  filtered.forEach { item ->
                                       Card(
                                           onClick = {
-                                              onSelect(
-                                                  item
-                                              )
+                                              onSelect(item)
                                           },
 
                                           modifier =
@@ -1234,13 +1135,12 @@ jobs:
                                                   .fillMaxWidth(),
 
                                           colors =
-                                              CardDefaults
-                                                  .cardColors(
-                                                      containerColor =
-                                                          MaterialTheme
-                                                              .colorScheme
-                                                              .surfaceContainerLow
-                                                  )
+                                              CardDefaults.cardColors(
+                                                  containerColor =
+                                                      MaterialTheme
+                                                          .colorScheme
+                                                          .surfaceContainerLow
+                                              )
                                       ) {
                                           Row(
                                               modifier =
@@ -1251,15 +1151,13 @@ jobs:
                                                       ),
 
                                               verticalAlignment =
-                                                  Alignment
-                                                      .CenterVertically
+                                                  Alignment.CenterVertically
                                           ) {
                                               Column(
                                                   modifier =
-                                                      Modifier
-                                                          .weight(
-                                                              1f
-                                                          )
+                                                      Modifier.weight(
+                                                          1f
+                                                      )
                                               ) {
                                                   Text(
                                                       text =
@@ -1290,20 +1188,17 @@ jobs:
                                                       fontWeight =
                                                           FontWeight.Medium,
 
-                                                      maxLines =
-                                                          1,
+                                                      maxLines = 1,
 
                                                       overflow =
-                                                          TextOverflow
-                                                              .Ellipsis
+                                                          TextOverflow.Ellipsis
                                                   )
 
                                                   Spacer(
                                                       modifier =
-                                                          Modifier
-                                                              .height(
-                                                                  3.dp
-                                                              )
+                                                          Modifier.height(
+                                                              3.dp
+                                                          )
                                                   )
 
                                                   Text(
@@ -1320,12 +1215,10 @@ jobs:
                                                               .colorScheme
                                                               .onSurfaceVariant,
 
-                                                      maxLines =
-                                                          1,
+                                                      maxLines = 1,
 
                                                       overflow =
-                                                          TextOverflow
-                                                              .Ellipsis
+                                                          TextOverflow.Ellipsis
                                                   )
                                               }
 
@@ -1338,8 +1231,7 @@ jobs:
                                               ) {
                                                   Icon(
                                                       imageVector =
-                                                          Icons.Outlined
-                                                              .Delete,
+                                                          Icons.Outlined.Delete,
 
                                                       contentDescription =
                                                           "删除历史",
@@ -1370,9 +1262,7 @@ jobs:
                   },
 
                   dismissButton = {
-                      if (
-                          items.isNotEmpty()
-                      ) {
+                      if (items.isNotEmpty()) {
                           TextButton(
                               onClick =
                                   onClearAll
@@ -1459,9 +1349,54 @@ jobs:
           )
           PY
 
-      - name: Show changed files
+      - name: Clean whitespace and show changed files
         shell: bash
         run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          targets = [
+              Path(
+                  "app/src/main/kotlin/com/yunx/app/data/prefs/"
+                  "ResolveHistoryRepository.kt"
+              ),
+              Path(
+                  "app/src/main/kotlin/com/yunx/app/ui/screens/"
+                  "DriveScreen.kt"
+              ),
+              Path(
+                  "app/src/main/kotlin/com/yunx/app/ui/screens/"
+                  "ResolveScreen.kt"
+              ),
+              Path(
+                  "app/src/main/kotlin/com/yunx/app/ui/viewmodel/"
+                  "DriveQuotaViewModel.kt"
+              ),
+          ]
+
+          for path in targets:
+              text = path.read_text(
+                  encoding="utf-8"
+              )
+
+              cleaned = "\n".join(
+                  line.rstrip()
+                  for line in text.splitlines()
+              )
+
+              if text.endswith("\n"):
+                  cleaned += "\n"
+
+              path.write_text(
+                  cleaned,
+                  encoding="utf-8"
+              )
+
+              print(
+                  f"Cleaned whitespace: {path}"
+              )
+          PY
+
           git status --short
 
           echo
