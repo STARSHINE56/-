@@ -121,7 +121,23 @@ class ResolveHistoryRepository(
         return updated
     }
 
+    fun remove(
+        item: ResolveHistoryItem
+    ): List<ResolveHistoryItem> {
+        val updated = load().filterNot {
+            it.platformName == item.platformName &&
+                it.shareId == item.shareId
+        }
+
+        save(updated)
+
+        return updated
+    }
+
+
+
     fun clear() {
+
         prefs
             .edit()
             .remove(KEY_HISTORY)
@@ -187,7 +203,7 @@ class ResolveHistoryRepository(
             "history"
 
         const val MAX_HISTORY =
-            10
+            30
 
         val URL_REGEX =
             Regex("""https?://[^\s]+""")

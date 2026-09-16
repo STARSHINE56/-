@@ -61,6 +61,7 @@ import com.yunx.app.data.db.XunleiAccountEntity
 import com.yunx.app.data.network.model.QuotaInfo
 import com.yunx.app.ui.viewmodel.BaiduCloudViewModel
 import com.yunx.app.ui.viewmodel.C139CloudViewModel
+import com.yunx.app.ui.viewmodel.DriveLoginState
 import com.yunx.app.ui.viewmodel.DriveQuotaViewModel
 import com.yunx.app.ui.viewmodel.Pan123CloudViewModel
 import com.yunx.app.ui.viewmodel.QuarkCloudViewModel
@@ -197,6 +198,37 @@ fun DriveScreen(
     // 下拉刷新状态：绑定空间配额加载中状态
     val isRefreshing by driveQuotaViewModel.loading.collectAsState()
 
+
+    val quarkLoginState by
+        driveQuotaViewModel
+            .quarkLoginState
+            .collectAsState()
+
+    val ucLoginState by
+        driveQuotaViewModel
+            .ucLoginState
+            .collectAsState()
+
+    val xunleiLoginState by
+        driveQuotaViewModel
+            .xunleiLoginState
+            .collectAsState()
+
+    val baiduLoginState by
+        driveQuotaViewModel
+            .baiduLoginState
+            .collectAsState()
+
+    val c139LoginState by
+        driveQuotaViewModel
+            .c139LoginState
+            .collectAsState()
+
+    val pan123LoginState by
+        driveQuotaViewModel
+            .pan123LoginState
+            .collectAsState()
+
     // 账号列表 ↔ 夸克云盘 ↔ UC 云盘 ↔ 迅雷云盘 ↔ 百度云盘 ↔ 移动云盘 ↔ 123 云盘：平滑过渡（淡入 + 轻微缩放，不僵硬）
     AnimatedContent(
         targetState = when {
@@ -275,6 +307,7 @@ fun DriveScreen(
                     DriveAccountCard(
                         account = quark,
                         quota = driveQuotaViewModel.quarkQuota.collectAsState().value,
+                        loginState = quarkLoginState,
                         onClick = if (quark.isLoggedIn) {
                             { showCloud = true }
                         } else {
@@ -291,6 +324,7 @@ fun DriveScreen(
                     DriveAccountCard(
                         account = uc,
                         quota = driveQuotaViewModel.ucQuota.collectAsState().value,
+                        loginState = ucLoginState,
                         onClick = if (uc.isLoggedIn) {
                             { showUCCloud = true }
                         } else {
@@ -307,6 +341,7 @@ fun DriveScreen(
                     DriveAccountCard(
                         account = xunlei,
                         quota = driveQuotaViewModel.xunleiQuota.collectAsState().value,
+                        loginState = xunleiLoginState,
                         onClick = if (xunlei.isLoggedIn) {
                             { showXunleiCloud = true }
                         } else {
@@ -323,6 +358,7 @@ fun DriveScreen(
                     DriveAccountCard(
                         account = baidu,
                         quota = driveQuotaViewModel.baiduQuota.collectAsState().value,
+                        loginState = baiduLoginState,
                         onClick = if (baidu.isLoggedIn) {
                             { showBaiduCloud = true }
                         } else {
@@ -339,6 +375,7 @@ fun DriveScreen(
                     DriveAccountCard(
                         account = c139,
                         quota = driveQuotaViewModel.c139Quota.collectAsState().value,
+                        loginState = c139LoginState,
                         onClick = if (c139.isLoggedIn) {
                             { showC139Cloud = true }
                         } else {
@@ -355,6 +392,7 @@ fun DriveScreen(
                     DriveAccountCard(
                         account = pan123,
                         quota = driveQuotaViewModel.pan123Quota.collectAsState().value,
+                        loginState = pan123LoginState,
                         onClick = if (pan123.isLoggedIn) {
                             { showPan123Cloud = true }
                         } else {
@@ -453,6 +491,12 @@ private fun DriveAccountCard(
     account: DriveAccount,
     /** 网盘空间详情（已登录且有数据时在卡片内显示进度条）；null 不显示 */
     quota: QuotaInfo? = null,
+    loginState: DriveLoginState =
+        if (account.isLoggedIn) {
+            DriveLoginState.CHECKING
+        } else {
+            DriveLoginState.LOGGED_OUT
+        },
     onClick: (() -> Unit)? = null,
     /** 已登录时右侧「三个点」更多按钮（打开账号弹窗）；null 则不显示 */
     onMoreClick: (() -> Unit)? = null
@@ -465,6 +509,7 @@ private fun DriveAccountCard(
         DriveAccountCardContent(
             account = account,
             quota = quota,
+        loginState = loginState,
             clickable = onClick != null,
             onMoreClick = onMoreClick
         )
@@ -490,6 +535,7 @@ private fun DriveAccountCard(
 private fun DriveAccountCardContent(
     account: DriveAccount,
     quota: QuotaInfo? = null,
+    loginState: DriveLoginState,
     clickable: Boolean,
     onMoreClick: (() -> Unit)? = null
 ) {
@@ -535,6 +581,54 @@ private fun DriveAccountCardContent(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+    if (account.isLoggedIn) {
+        Spacer(
+            modifier =
+                Modifier.height(3.dp)
+        )
+
+        val healthText =
+            when (loginState) {
+                DriveLoginState.CHECKING ->
+                    "● 检测中"
+
+                DriveLoginState.HEALTHY ->
+                    "● 状态正常"
+
+                DriveLoginState.SUSPECT ->
+                    "● 登录可能已失效"
+
+                DriveLoginState.LOGGED_OUT ->
+                    "● 未登录"
+            }
+
+        Text(
+            text = healthText,
+            style =
+                MaterialTheme
+                    .typography
+                    .labelSmall,
+            color =
+                when (loginState) {
+                    DriveLoginState.HEALTHY ->
+                        MaterialTheme
+                            .colorScheme
+                            .primary
+
+                    DriveLoginState.SUSPECT ->
+                        MaterialTheme
+                            .colorScheme
+                            .error
+
+                    else ->
+                        MaterialTheme
+                            .colorScheme
+                            .onSurfaceVariant
+                }
+        )
+    }
+
             // 已登录且有空间数据：卡片内展示剩余空间进度条（出现时淡入 + 纵向展开，避免突兀）
             AnimatedVisibility(
                 visible = account.isLoggedIn && quota != null,

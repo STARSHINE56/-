@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,7 +49,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -150,6 +153,10 @@ fun ResolveScreen(
         mutableStateOf(
             historyRepository.load()
         )
+    }
+
+    var showHistoryManager by remember {
+        mutableStateOf(false)
     }
 
     fun resolveAndRemember(
@@ -522,6 +529,11 @@ fun ResolveScreen(
                                     }
                             )
                         },
+                onShowAllHistory = {
+                    showHistoryManager = true
+                },
+
+
 
                         onClearHistory = {
                             historyRepository.clear()
@@ -643,6 +655,44 @@ fun ResolveScreen(
         }
     }
 
+    if (showHistoryManager) {
+    HistoryManagerDialog(
+        items = recentHistory,
+
+        onSelect = { item ->
+            showHistoryManager = false
+
+            link = item.link
+            pwd = item.password
+            pwdEdited = true
+
+            resolveAndRemember(
+                item.link,
+                item.password.ifBlank {
+                    null
+                }
+            )
+        },
+
+        onDelete = { item ->
+            recentHistory =
+                historyRepository.remove(
+                    item
+                )
+        },
+
+        onClearAll = {
+            historyRepository.clear()
+            recentHistory = emptyList()
+            showHistoryManager = false
+        },
+
+        onDismiss = {
+            showHistoryManager = false
+        }
+    )
+}
+
     // -----------------------------
     // 获取下载链接加载弹窗
     // -----------------------------
@@ -749,6 +799,9 @@ private fun ResolveInputContent(
     onHistorySelect: (
         ResolveHistoryItem
     ) -> Unit,
+
+    onShowAllHistory: () -> Unit,
+
 
     onClearHistory: () -> Unit
 ) {
@@ -1115,6 +1168,16 @@ private fun ResolveInputContent(
                         fontWeight =
                             FontWeight.SemiBold
                     )
+            TextButton(
+                onClick =
+                    onShowAllHistory
+            ) {
+                Text(
+                    "查看全部"
+                )
+            }
+
+
 
                     TextButton(
                         onClick =
@@ -1143,24 +1206,6 @@ private fun ResolveInputContent(
                         )
                     }
 
-                if (
-                    recentHistory.size > 3
-                ) {
-                    Text(
-                        text =
-                            "仅显示最近 3 条，共 ${recentHistory.size} 条记录",
-
-                        style =
-                            MaterialTheme
-                                .typography
-                                .bodySmall,
-
-                        color =
-                            MaterialTheme
-                                .colorScheme
-                                .onSurfaceVariant
-                    )
-                }
             }
         } else {
 
@@ -1427,6 +1472,308 @@ private fun HistoryCard(
             }
         }
     }
+}
+
+/**
+ * 完整解析历史管理。
+ */
+@Composable
+private fun HistoryManagerDialog(
+    items: List<ResolveHistoryItem>,
+    onSelect: (ResolveHistoryItem) -> Unit,
+    onDelete: (ResolveHistoryItem) -> Unit,
+    onClearAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var query by rememberSaveable {
+        mutableStateOf("")
+    }
+
+    val filtered =
+        remember(
+            items,
+            query
+        ) {
+            val keyword =
+                query.trim()
+
+            if (keyword.isBlank()) {
+                items
+            } else {
+                items.filter { item ->
+                    item.platformName.contains(
+                        keyword,
+                        ignoreCase = true
+                    ) ||
+                        item.link.contains(
+                            keyword,
+                            ignoreCase = true
+                        ) ||
+                        item.shareId.contains(
+                            keyword,
+                            ignoreCase = true
+                        )
+                }
+            }
+        }
+
+    AlertDialog(
+        onDismissRequest =
+            onDismiss,
+
+        title = {
+            Text(
+                "解析历史"
+            )
+        },
+
+        text = {
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(
+                            max = 520.dp
+                        )
+            ) {
+                OutlinedTextField(
+                    value =
+                        query,
+
+                    onValueChange = {
+                        query = it
+                    },
+
+                    modifier =
+                        Modifier.fillMaxWidth(),
+
+                    placeholder = {
+                        Text(
+                            "搜索平台或分享链接"
+                        )
+                    },
+
+                    leadingIcon = {
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.Search,
+
+                            contentDescription =
+                                null
+                        )
+                    },
+
+                    singleLine = true,
+
+                    shape =
+                        MaterialTheme
+                            .shapes
+                            .large
+                )
+
+                Spacer(
+                    modifier =
+                        Modifier.height(
+                            12.dp
+                        )
+                )
+
+                if (filtered.isEmpty()) {
+                    Text(
+                        text =
+                            if (items.isEmpty()) {
+                                "暂无解析历史"
+                            } else {
+                                "没有找到匹配的记录"
+                            },
+
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    vertical =
+                                        24.dp
+                                ),
+
+                        style =
+                            MaterialTheme
+                                .typography
+                                .bodyMedium,
+
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .onSurfaceVariant
+                    )
+                } else {
+                    Column(
+                        modifier =
+                            Modifier
+                                .verticalScroll(
+                                    rememberScrollState()
+                                ),
+
+                        verticalArrangement =
+                            Arrangement.spacedBy(
+                                8.dp
+                            )
+                    ) {
+                        filtered.forEach { item ->
+                            Card(
+                                onClick = {
+                                    onSelect(item)
+                                },
+
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth(),
+
+                                colors =
+                                    CardDefaults.cardColors(
+                                        containerColor =
+                                            MaterialTheme
+                                                .colorScheme
+                                                .surfaceContainerLow
+                                    )
+                            ) {
+                                Row(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+                                                12.dp
+                                            ),
+
+                                    verticalAlignment =
+                                        Alignment.CenterVertically
+                                ) {
+                                    Column(
+                                        modifier =
+                                            Modifier.weight(
+                                                1f
+                                            )
+                                    ) {
+                                        Text(
+                                            text =
+                                                buildString {
+                                                    append(
+                                                        item.platformName
+                                                    )
+
+                                                    if (
+                                                        item.password
+                                                            .isNotBlank()
+                                                    ) {
+                                                        append(
+                                                            " · 提取码 "
+                                                        )
+
+                                                        append(
+                                                            item.password
+                                                        )
+                                                    }
+                                                },
+
+                                            style =
+                                                MaterialTheme
+                                                    .typography
+                                                    .titleSmall,
+
+                                            fontWeight =
+                                                FontWeight.Medium,
+
+                                            maxLines = 1,
+
+                                            overflow =
+                                                TextOverflow.Ellipsis
+                                        )
+
+                                        Spacer(
+                                            modifier =
+                                                Modifier.height(
+                                                    3.dp
+                                                )
+                                        )
+
+                                        Text(
+                                            text =
+                                                item.link,
+
+                                            style =
+                                                MaterialTheme
+                                                    .typography
+                                                    .bodySmall,
+
+                                            color =
+                                                MaterialTheme
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+
+                                            maxLines = 1,
+
+                                            overflow =
+                                                TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            onDelete(
+                                                item
+                                            )
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector =
+                                                Icons.Outlined.Delete,
+
+                                            contentDescription =
+                                                "删除历史",
+
+                                            tint =
+                                                MaterialTheme
+                                                    .colorScheme
+                                                    .error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+
+        confirmButton = {
+            TextButton(
+                onClick =
+                    onDismiss
+            ) {
+                Text(
+                    "关闭"
+                )
+            }
+        },
+
+        dismissButton = {
+            if (items.isNotEmpty()) {
+                TextButton(
+                    onClick =
+                        onClearAll
+                ) {
+                    Text(
+                        text =
+                            "清空全部",
+
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .error
+                    )
+                }
+            }
+        }
+    )
 }
 
 /**
