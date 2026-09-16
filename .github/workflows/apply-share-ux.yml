@@ -32,8 +32,11 @@ jobs:
         shell: bash
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
           test -x "$SDKMANAGER"
+
           yes | "$SDKMANAGER" --licenses >/dev/null || true
+
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-36" \
@@ -42,11 +45,14 @@ jobs:
       - name: Add resolve history repository
         shell: bash
         run: |
+          mkdir -p app/src/main/kotlin/com/yunx/app/data/prefs
+
           cat > app/src/main/kotlin/com/yunx/app/data/prefs/ResolveHistoryRepository.kt <<'KOTLIN'
           /*
            * 星辰助手 - 基于 YunX 二次开发
            * 本文件随项目依据 GNU AGPL v3.0 或更高版本发布。
            */
+
           package com.yunx.app.data.prefs
 
           import android.content.Context
@@ -63,26 +69,46 @@ jobs:
               val timestamp: Long
           )
 
-          class ResolveHistoryRepository(context: Context) {
-              private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+          class ResolveHistoryRepository(
+              context: Context
+          ) {
+              private val prefs = context.getSharedPreferences(
+                  PREFS_NAME,
+                  Context.MODE_PRIVATE
+              )
 
               fun load(): List<ResolveHistoryItem> {
-                  val raw = prefs.getString(KEY_HISTORY, null) ?: return emptyList()
+                  val raw = prefs.getString(KEY_HISTORY, null)
+                      ?: return emptyList()
+
                   return runCatching {
                       val array = JSONArray(raw)
+
                       buildList {
                           for (index in 0 until array.length()) {
-                              val obj = array.optJSONObject(index) ?: continue
+                              val obj = array.optJSONObject(index)
+                                  ?: continue
+
                               val link = obj.optString("link")
                               val shareId = obj.optString("shareId")
-                              if (link.isBlank() || shareId.isBlank()) continue
+
+                              if (link.isBlank() || shareId.isBlank()) {
+                                  continue
+                              }
+
                               add(
                                   ResolveHistoryItem(
                                       link = link,
                                       password = obj.optString("password"),
-                                      platformName = obj.optString("platformName", "网盘"),
+                                      platformName = obj.optString(
+                                          "platformName",
+                                          "网盘"
+                                      ),
                                       shareId = shareId,
-                                      timestamp = obj.optLong("timestamp", 0L)
+                                      timestamp = obj.optLong(
+                                          "timestamp",
+                                          0L
+                                      )
                                   )
                               )
                           }
@@ -90,53 +116,111 @@ jobs:
                   }.getOrDefault(emptyList())
               }
 
-              fun add(text: String, password: String?): List<ResolveHistoryItem> {
-                  val parsed = ShareLinkParser.parse(text) ?: return load()
-                  val url = URL_REGEX.find(text.trim())?.value
-                      ?.trimEnd('。', '，', ',', '；', ';', ')', ']', '}', '"', '\'')
+              fun add(
+                  text: String,
+                  password: String?
+              ): List<ResolveHistoryItem> {
+                  val parsed = ShareLinkParser.parse(text)
+                      ?: return load()
+
+                  val url = URL_REGEX
+                      .find(text.trim())
+                      ?.value
+                      ?.trimEnd(
+                          '。',
+                          '，',
+                          ',',
+                          '；',
+                          ';',
+                          ')',
+                          ']',
+                          '}',
+                          '"',
+                          '\''
+                      )
                       ?: text.trim()
 
                   val item = ResolveHistoryItem(
                       link = url,
-                      password = password?.trim().orEmpty().ifBlank { parsed.pwd.orEmpty() },
-                      platformName = platformLabel(parsed.platform),
+                      password = password
+                          ?.trim()
+                          .orEmpty()
+                          .ifBlank {
+                              parsed.pwd.orEmpty()
+                          },
+                      platformName = platformLabel(
+                          parsed.platform
+                      ),
                       shareId = parsed.shareId,
                       timestamp = System.currentTimeMillis()
                   )
 
                   val updated = buildList {
                       add(item)
+
                       addAll(
                           load().filterNot {
-                              it.platformName == item.platformName && it.shareId == item.shareId
+                              it.platformName == item.platformName &&
+                                  it.shareId == item.shareId
                           }
                       )
                   }.take(MAX_HISTORY)
 
                   save(updated)
+
                   return updated
               }
 
               fun clear() {
-                  prefs.edit().remove(KEY_HISTORY).apply()
+                  prefs
+                      .edit()
+                      .remove(KEY_HISTORY)
+                      .apply()
               }
 
-              private fun save(items: List<ResolveHistoryItem>) {
+              private fun save(
+                  items: List<ResolveHistoryItem>
+              ) {
                   val array = JSONArray()
+
                   items.forEach { item ->
                       array.put(
                           JSONObject()
-                              .put("link", item.link)
-                              .put("password", item.password)
-                              .put("platformName", item.platformName)
-                              .put("shareId", item.shareId)
-                              .put("timestamp", item.timestamp)
+                              .put(
+                                  "link",
+                                  item.link
+                              )
+                              .put(
+                                  "password",
+                                  item.password
+                              )
+                              .put(
+                                  "platformName",
+                                  item.platformName
+                              )
+                              .put(
+                                  "shareId",
+                                  item.shareId
+                              )
+                              .put(
+                                  "timestamp",
+                                  item.timestamp
+                              )
                       )
                   }
-                  prefs.edit().putString(KEY_HISTORY, array.toString()).apply()
+
+                  prefs
+                      .edit()
+                      .putString(
+                          KEY_HISTORY,
+                          array.toString()
+                      )
+                      .apply()
               }
 
-              private fun platformLabel(platform: SharePlatform): String = when (platform) {
+              private fun platformLabel(
+                  platform: SharePlatform
+              ): String = when (platform) {
                   SharePlatform.QUARK -> "夸克网盘"
                   SharePlatform.UC -> "UC 网盘"
                   SharePlatform.XUNLEI -> "迅雷网盘"
@@ -146,10 +230,17 @@ jobs:
               }
 
               private companion object {
-                  const val PREFS_NAME = "resolve_history"
-                  const val KEY_HISTORY = "history"
-                  const val MAX_HISTORY = 10
-                  val URL_REGEX = Regex("""https?://[^\s]+""")
+                  const val PREFS_NAME =
+                      "resolve_history"
+
+                  const val KEY_HISTORY =
+                      "history"
+
+                  const val MAX_HISTORY =
+                      10
+
+                  val URL_REGEX =
+                      Regex("""https?://[^\s]+""")
               }
           }
           KOTLIN
@@ -161,14 +252,27 @@ jobs:
           from pathlib import Path
           import re
 
-          path = Path("app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt")
-          text = path.read_text(encoding="utf-8")
+          path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt"
+          )
+
+          text = path.read_text(
+              encoding="utf-8"
+          )
 
           def replace_once(old, new, label):
               global text
+
               if old not in text:
-                  raise RuntimeError(f"Patch target not found: {label}")
-              text = text.replace(old, new, 1)
+                  raise RuntimeError(
+                      f"Patch target not found: {label}"
+                  )
+
+              text = text.replace(
+                  old,
+                  new,
+                  1
+              )
 
           replace_once(
               "import com.yunx.app.data.network.SharePlatform\n",
@@ -176,7 +280,7 @@ jobs:
           import com.yunx.app.data.prefs.ResolveHistoryItem
           import com.yunx.app.data.prefs.ResolveHistoryRepository
           """,
-              "history imports",
+              "history imports"
           )
 
           replace_once(
@@ -186,55 +290,90 @@ jobs:
               """    val downloadError = viewModel.downloadError
               val context = LocalContext.current
 
-              // 最近解析记录：仅保存在本机 SharedPreferences，最多 10 条。
+              // 最近解析记录，仅保存在本机。
               val historyRepository = remember {
-                  ResolveHistoryRepository(context.applicationContext)
-              }
-              var recentHistory by remember {
-                  mutableStateOf(historyRepository.load())
+                  ResolveHistoryRepository(
+                      context.applicationContext
+                  )
               }
 
-              fun resolveAndRemember(rawLink: String, password: String?) {
-                  val parsed = ShareLinkParser.parse(rawLink)
+              var recentHistory by remember {
+                  mutableStateOf(
+                      historyRepository.load()
+                  )
+              }
+
+              fun resolveAndRemember(
+                  rawLink: String,
+                  password: String?
+              ) {
+                  val parsed =
+                      ShareLinkParser.parse(rawLink)
+
                   if (parsed != null) {
-                      recentHistory = historyRepository.add(rawLink, password ?: parsed.pwd)
+                      recentHistory =
+                          historyRepository.add(
+                              rawLink,
+                              password ?: parsed.pwd
+                          )
                   }
-                  viewModel.startResolve(rawLink, password)
+
+                  viewModel.startResolve(
+                      rawLink,
+                      password
+                  )
               }
           """,
-              "history state",
+              "history state"
           )
 
-          # ResolveInputContent 调用处可能因源码格式化产生不同缩进，使用正则稳健匹配。
-          pattern = re.compile(
-              r'onClearPwd = \{ pwd = "" \}\s*\n\s*\)',
-              re.MULTILINE,
+          call_pattern = re.compile(
+              r'onClearPwd\s*=\s*\{\s*pwd\s*=\s*""\s*\}'
+              r'\s*\n\s*\)',
+              re.MULTILINE
           )
-          replacement = """onClearPwd = { pwd = "" },
+
+          call_replacement = """onClearPwd = { pwd = "" },
                     recentHistory = recentHistory,
                     onStartResolve = { rawLink, password ->
-                        resolveAndRemember(rawLink, password)
+                        resolveAndRemember(
+                            rawLink,
+                            password
+                        )
                     },
                     onHistorySelect = { item ->
                         link = item.link
                         pwd = item.password
                         pwdEdited = true
-                        resolveAndRemember(item.link, item.password.ifBlank { null })
+
+                        resolveAndRemember(
+                            item.link,
+                            item.password.ifBlank {
+                                null
+                            }
+                        )
                     },
                     onClearHistory = {
                         historyRepository.clear()
                         recentHistory = emptyList()
                     }
                 )"""
-          text, count = pattern.subn(replacement, text, count=1)
-          if count != 1:
-              raise RuntimeError("Patch target not found: ResolveInputContent call")
 
-          # 剪贴板提示也记入历史。
+          text, count = call_pattern.subn(
+              call_replacement,
+              text,
+              count=1
+          )
+
+          if count != 1:
+              raise RuntimeError(
+                  "Patch target not found: ResolveInputContent call"
+              )
+
           replace_once(
               "                    viewModel.startResolve(suggestion, parsed?.pwd)\n",
               "                    resolveAndRemember(suggestion, parsed?.pwd)\n",
-              "clipboard resolve",
+              "clipboard resolve"
           )
 
           replace_once(
@@ -250,71 +389,132 @@ jobs:
               onClearHistory: () -> Unit
           ) {
           """,
-              "ResolveInputContent signature",
+              "ResolveInputContent signature"
           )
 
-          replace_once(
-              """        Button(
-                  onClick = { viewModel.startResolve(link, pwd) },
-          """,
-              """        Button(
-                  onClick = { onStartResolve(link, pwd.ifBlank { null }) },
-          """,
-              "parse button",
+          button_pattern = re.compile(
+              r'onClick\s*=\s*\{\s*'
+              r'viewModel\.startResolve\('
+              r'\s*link\s*,\s*pwd\s*'
+              r'\)\s*\}\s*,'
           )
 
-          marker = """        if (state is ResolveUiState.Error) {
-          """
+          text, count = button_pattern.subn(
+              """onClick = {
+                      onStartResolve(
+                          link,
+                          pwd.ifBlank { null }
+                      )
+                  },""",
+              text,
+              count=1
+          )
+
+          if count != 1:
+              raise RuntimeError(
+                  "Patch target not found: parse button"
+              )
+
+          marker = (
+              "        if "
+              "(state is ResolveUiState.Error) {\n"
+          )
+
+          if marker not in text:
+              raise RuntimeError(
+                  "Patch target not found: error card"
+              )
 
           history_ui = """        if (recentHistory.isNotEmpty()) {
               Card(
                   modifier = Modifier.fillMaxWidth(),
                   colors = CardDefaults.cardColors(
-                      containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                      containerColor =
+                          MaterialTheme.colorScheme.surfaceContainerLow
                   )
               ) {
                   Column(
-                      modifier = Modifier.padding(12.dp),
-                      verticalArrangement = Arrangement.spacedBy(4.dp)
+                      modifier = Modifier.padding(
+                          12.dp
+                      ),
+                      verticalArrangement =
+                          Arrangement.spacedBy(
+                              4.dp
+                          )
                   ) {
                       Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          verticalAlignment = Alignment.CenterVertically
+                          modifier =
+                              Modifier.fillMaxWidth(),
+                          verticalAlignment =
+                              Alignment.CenterVertically
                       ) {
                           Text(
                               text = "最近解析",
-                              modifier = Modifier.weight(1f),
-                              style = MaterialTheme.typography.titleSmall
+                              modifier =
+                                  Modifier.weight(1f),
+                              style =
+                                  MaterialTheme.typography.titleSmall
                           )
-                          TextButton(onClick = onClearHistory) {
+
+                          TextButton(
+                              onClick =
+                                  onClearHistory
+                          ) {
                               Text("清空")
                           }
                       }
 
-                      recentHistory.forEach { item ->
+                      recentHistory.forEach {
+                          item ->
+
                           TextButton(
-                              onClick = { onHistorySelect(item) },
-                              modifier = Modifier.fillMaxWidth()
+                              onClick = {
+                                  onHistorySelect(
+                                      item
+                                  )
+                              },
+                              modifier =
+                                  Modifier.fillMaxWidth()
                           ) {
                               Column(
-                                  modifier = Modifier.fillMaxWidth(),
-                                  horizontalAlignment = Alignment.Start
+                                  modifier =
+                                      Modifier.fillMaxWidth(),
+                                  horizontalAlignment =
+                                      Alignment.Start
                               ) {
                                   Text(
-                                      text = buildString {
-                                          append(item.platformName)
-                                          if (item.password.isNotBlank()) {
-                                              append(" · 提取码 ")
-                                              append(item.password)
-                                          }
-                                      },
-                                      style = MaterialTheme.typography.labelMedium,
-                                      color = MaterialTheme.colorScheme.primary
+                                      text =
+                                          buildString {
+                                              append(
+                                                  item.platformName
+                                              )
+
+                                              if (
+                                                  item.password
+                                                      .isNotBlank()
+                                              ) {
+                                                  append(
+                                                      " · 提取码 "
+                                                  )
+
+                                                  append(
+                                                      item.password
+                                                  )
+                                              }
+                                          },
+                                      style =
+                                          MaterialTheme.typography.labelMedium,
+                                      color =
+                                          MaterialTheme.colorScheme.primary
                                   )
+
                                   Text(
-                                      text = item.link,
-                                      style = MaterialTheme.typography.bodySmall,
-                                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                      text =
+                                          item.link,
+                                      style =
+                                          MaterialTheme.typography.bodySmall,
+                                      color =
+                                          MaterialTheme.colorScheme.onSurfaceVariant,
                                       maxLines = 1
                                   )
                               }
@@ -326,9 +526,16 @@ jobs:
 
           """
 
-          replace_once(marker, history_ui + marker, "recent history UI")
+          text = text.replace(
+              marker,
+              history_ui + marker,
+              1
+          )
 
-          path.write_text(text, encoding="utf-8")
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
           PY
 
       - name: Improve download link copy actions
@@ -336,72 +543,142 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          path = Path("app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt")
-          text = path.read_text(encoding="utf-8")
+          path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt"
+          )
 
-          def replace_once(old, new, label):
-              global text
-              if old not in text:
-                  raise RuntimeError(f"Patch target not found: {label}")
-              text = text.replace(old, new, 1)
+          text = path.read_text(
+              encoding="utf-8"
+          )
 
-          replace_once(
-              "import androidx.compose.foundation.layout.Column\n",
-              """import androidx.compose.foundation.layout.Column
+          if (
+              "import androidx.compose.foundation.layout.Row\n"
+              not in text
+          ):
+              text = text.replace(
+                  "import androidx.compose.foundation.layout.Column\n",
+                  """import androidx.compose.foundation.layout.Column
           import androidx.compose.foundation.layout.Row
           """,
-              "Row import",
+                  1
+              )
+
+          click_pattern = re.compile(
+              r'\.combinedClickable\(\s*'
+              r'onClick\s*=\s*\{\s*\}\s*,\s*'
+              r'onLongClick\s*=\s*\{\s*'
+              r'copyToClipboard\('
+              r'context\s*,\s*link\.downloadUrl'
+              r'\)\s*'
+              r'SnackbarController\.show\('
+              r'"下载链接已复制"'
+              r'\)\s*'
+              r'\}\s*'
+              r'\)',
+              re.MULTILINE
           )
 
-          replace_once(
-              """                            .combinedClickable(
-                                      onClick = {},
-                                      onLongClick = {
-                                          copyToClipboard(context, link.downloadUrl)
-                                          SnackbarController.show("下载链接已复制")
-                                      }
-                                  ),
-          """,
-              """                            .combinedClickable(
-                                      onClick = {
-                                          copyToClipboard(context, "download_url", link.downloadUrl)
-                                          SnackbarController.show("下载直链已复制")
-                                      },
-                                      onLongClick = {
-                                          copyToClipboard(context, "download_url", link.downloadUrl)
-                                          SnackbarController.show("下载直链已复制")
-                                      }
-                                  ),
-          """,
-              "link click copy",
+          click_replacement = """.combinedClickable(
+                                  onClick = {
+                                      copyToClipboard(
+                                          context,
+                                          "download_url",
+                                          link.downloadUrl
+                                      )
+
+                                      SnackbarController.show(
+                                          "下载直链已复制"
+                                      )
+                                  },
+                                  onLongClick = {
+                                      copyToClipboard(
+                                          context,
+                                          "download_url",
+                                          link.downloadUrl
+                                      )
+
+                                      SnackbarController.show(
+                                          "下载直链已复制"
+                                      )
+                                  }
+                              )"""
+
+          text, count = click_pattern.subn(
+              click_replacement,
+              text,
+              count=1
           )
 
-          target = """                Text(
-                      text = "点击「开始下载」将分片多线程下载并保存到 Download 目录",
-          """
+          if count != 1:
+              raise RuntimeError(
+                  "Patch target not found: link click copy"
+              )
+
+          target = (
+              '                Text(\n'
+              '                    text = '
+              '"点击「开始下载」将分片多线程下载并保存到 Download 目录",\n'
+          )
+
+          if target not in text:
+              raise RuntimeError(
+                  "Patch target not found: download help text"
+              )
 
           buttons = """                Row(
-                      modifier = Modifier.fillMaxWidth(),
-                      horizontalArrangement = Arrangement.End
+                      modifier =
+                          Modifier.fillMaxWidth(),
+                      horizontalArrangement =
+                          Arrangement.End
                   ) {
                       TextButton(
                           onClick = {
-                              copyToClipboard(context, "download_url", link.downloadUrl)
-                              SnackbarController.show("下载直链已复制")
+                              copyToClipboard(
+                                  context,
+                                  "download_url",
+                                  link.downloadUrl
+                              )
+
+                              SnackbarController.show(
+                                  "下载直链已复制"
+                              )
                           }
                       ) {
                           Text("复制直链")
                       }
+
                       TextButton(
                           onClick = {
-                              val info = buildString {
-                                  appendLine("文件名：${link.filename}")
-                                  appendLine("文件大小：${formatFileSize(link.size)}")
-                                  append("下载直链：${link.downloadUrl}")
-                              }
-                              copyToClipboard(context, "file_info", info)
-                              SnackbarController.show("文件信息已复制")
+                              val info =
+                                  buildString {
+                                      appendLine(
+                                          "文件名：${link.filename}"
+                                      )
+
+                                      appendLine(
+                                          "文件大小：${
+                                              formatFileSize(
+                                                  link.size
+                                              )
+                                          }"
+                                      )
+
+                                      append(
+                                          "下载直链：${link.downloadUrl}"
+                                      )
+                                  }
+
+                              copyToClipboard(
+                                  context,
+                                  "file_info",
+                                  info
+                              )
+
+                              SnackbarController.show(
+                                  "文件信息已复制"
+                              )
                           }
                       ) {
                           Text("复制文件信息")
@@ -410,54 +687,136 @@ jobs:
 
           """
 
-          replace_once(target, buttons + target, "copy buttons")
+          text = text.replace(
+              target,
+              buttons + target,
+              1
+          )
 
-          replace_once(
-              """private fun copyToClipboard(context: Context, text: String) {
-              val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-              clipboard.setPrimaryClip(ClipData.newPlainText("download_url", text))
-          }
-          """,
-              """private fun copyToClipboard(context: Context, label: String, text: String) {
-              val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-              clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+          helper_pattern = re.compile(
+              r'private fun copyToClipboard'
+              r'\(\s*context:\s*Context\s*,\s*'
+              r'text:\s*String\s*\)\s*\{\s*'
+              r'val clipboard\s*=\s*'
+              r'context\.getSystemService'
+              r'\(Context\.CLIPBOARD_SERVICE\)'
+              r'\s+as\s+ClipboardManager\s*'
+              r'clipboard\.setPrimaryClip'
+              r'\(\s*ClipData\.newPlainText'
+              r'\("download_url"\s*,\s*text\)\s*\)'
+              r'\s*\}',
+              re.MULTILINE
+          )
+
+          helper_replacement = """private fun copyToClipboard(
+              context: Context,
+              label: String,
+              text: String
+          ) {
+              val clipboard =
+                  context.getSystemService(
+                      Context.CLIPBOARD_SERVICE
+                  ) as ClipboardManager
+
+              clipboard.setPrimaryClip(
+                  ClipData.newPlainText(
+                      label,
+                      text
+                  )
+              )
           }
 
-          private fun formatFileSize(bytes: Long): String {
-              if (bytes <= 0L) return "未知"
-              val units = arrayOf("B", "KB", "MB", "GB", "TB")
-              var value = bytes.toDouble()
+          private fun formatFileSize(
+              bytes: Long
+          ): String {
+              if (bytes <= 0L) {
+                  return "未知"
+              }
+
+              val units = arrayOf(
+                  "B",
+                  "KB",
+                  "MB",
+                  "GB",
+                  "TB"
+              )
+
+              var value =
+                  bytes.toDouble()
+
               var unit = 0
-              while (value >= 1024.0 && unit < units.lastIndex) {
+
+              while (
+                  value >= 1024.0 &&
+                  unit < units.lastIndex
+              ) {
                   value /= 1024.0
                   unit++
               }
+
               return if (unit == 0) {
-                  "${bytes} ${units[unit]}"
+                  "$bytes ${units[unit]}"
               } else {
-                  String.format(java.util.Locale.US, "%.2f %s", value, units[unit])
+                  String.format(
+                      java.util.Locale.US,
+                      "%.2f %s",
+                      value,
+                      units[unit]
+                  )
               }
-          }
-          """,
-              "clipboard helper",
+          }"""
+
+          text, count = helper_pattern.subn(
+              helper_replacement,
+              text,
+              count=1
           )
 
-          path.write_text(text, encoding="utf-8")
+          if count != 1:
+              raise RuntimeError(
+                  "Patch target not found: clipboard helper"
+              )
+
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
           PY
 
       - name: Verify source changes
         shell: bash
         run: |
-          test -f app/src/main/kotlin/com/yunx/app/data/prefs/ResolveHistoryRepository.kt
-          grep -q "最近解析" app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt
-          grep -q "复制文件信息" app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt
-          grep -q "ResolveHistoryRepository" app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt
+          test -f \
+            app/src/main/kotlin/com/yunx/app/data/prefs/ResolveHistoryRepository.kt
+
+          grep -q \
+            "最近解析" \
+            app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt
+
+          grep -q \
+            "复制直链" \
+            app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt
+
+          grep -q \
+            "复制文件信息" \
+            app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt
+
+          grep -q \
+            "ResolveHistoryRepository" \
+            app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt
 
       - name: Configure debug build
         shell: bash
         run: |
-          sed -i '/aapt2FromMavenOverride/d' gradle.properties
-          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          sed -i \
+            '/aapt2FromMavenOverride/d' \
+            gradle.properties
+
+          printf \
+            'sdk.dir=%s\n' \
+            "$ANDROID_HOME" \
+            > local.properties
+
           chmod +x gradlew
 
       - name: Build verification
@@ -473,11 +832,19 @@ jobs:
       - name: Commit improvements
         shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config \
+            user.name \
+            "github-actions[bot]"
 
-          rm -f .github/workflows/apply-share-ux.yml
-          rm -f local.properties
+          git config \
+            user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          rm -f \
+            .github/workflows/apply-share-ux.yml
+
+          rm -f \
+            local.properties
 
           git add -A
 
@@ -486,5 +853,9 @@ jobs:
             exit 0
           fi
 
-          git commit -m "feat: improve share parsing experience"
-          git push origin HEAD:main
+          git commit \
+            -m "feat: improve share parsing experience"
+
+          git push \
+            origin \
+            HEAD:main
