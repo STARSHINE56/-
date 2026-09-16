@@ -208,8 +208,16 @@ fun DownloadScreen(
                 }
             }
         }
-
+        FloatingActionButton(
+            onClick = {
+                if (hasPermission) showAddDialog = true
+                else permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "添加下载任务")
         }
+    }
 
     if (showAddDialog) {
         AddDownloadDialog(
@@ -1208,19 +1216,22 @@ private fun formatRemain(millis: Long): String {
     }
 }
 
-private fun openSavedFile(context: android.content.Context, savePath: String) {
-    if (savePath.isBlank()) return
-    val uri = if (savePath.startsWith("content://")) {
-        Uri.parse(savePath)
-    } else {
-        // Android 7.0+ 禁止暴露 file:// URI，必须经 FileProvider 转 content://
-        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(savePath))
-    }
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-        setDataAndType(uri, "*/*")
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+internal fun openSavedFile(context: android.content.Context, savePath: String) {
+    if (savePath.isBlank()) {
+        SnackbarController.show("文件不存在")
+        return
     }
     runCatching {
+        val uri = if (savePath.startsWith("content://")) {
+            Uri.parse(savePath)
+        } else {
+            // Android 7.0+ 禁止暴露 file:// URI，必须经 FileProvider 转 content://
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(savePath))
+        }
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "*/*")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
         context.startActivity(Intent.createChooser(intent, "打开文件"))
     }.onFailure {
         SnackbarController.show("无法打开该文件")
