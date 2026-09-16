@@ -24,6 +24,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path(
               "app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt"
@@ -31,420 +32,385 @@ jobs:
 
           text = path.read_text(encoding="utf-8")
 
-          def replace_once(old, new, name):
-              global text
-              if old not in text:
-                  raise SystemExit(
-                      f"Required block not found: {name}"
-                  )
-              text = text.replace(old, new, 1)
+          # 只处理 ResolveInputContent 到 formatHistoryTime 之间，
+          # 避免误改其他页面组件。
+          start_marker = "private fun ResolveInputContent("
+          end_marker = "/**\n * 将解析时间转换为简短的相对时间。"
 
-          # 页面边距
-          replace_once(
-              ".padding(\n"
-              "                                  horizontal = 16.dp,\n"
-              "                                  vertical = 14.dp\n"
-              "                              ),\n"
-              "\n"
-              "                      verticalArrangement =\n"
-              "                          Arrangement.spacedBy(\n"
-              "                              20.dp\n"
-              "                          )",
-              ".padding(\n"
-              "                                  horizontal = 18.dp,\n"
-              "                                  vertical = 12.dp\n"
-              "                              ),\n"
-              "\n"
-              "                      verticalArrangement =\n"
-              "                          Arrangement.spacedBy(\n"
-              "                              18.dp\n"
-              "                          )",
-              "page spacing",
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+
+          prefix = text[:start]
+          block = text[start:end]
+          suffix = text[end:]
+
+          # --------------------------------------------------
+          # 页面整体更紧凑
+          # --------------------------------------------------
+
+          block = re.sub(
+              r'horizontal\s*=\s*16\.dp,\s*'
+              r'vertical\s*=\s*14\.dp',
+              'horizontal = 18.dp,\n'
+              '                    vertical = 12.dp',
+              block,
+              count=1,
           )
 
-          # 主卡片圆角
-          replace_once(
+          block = re.sub(
+              r'Arrangement\.spacedBy\(\s*20\.dp\s*\)',
+              'Arrangement.spacedBy(\n'
+              '                18.dp\n'
+              '            )',
+              block,
+              count=1,
+          )
+
+          # --------------------------------------------------
+          # 主卡片
+          # --------------------------------------------------
+
+          block = block.replace(
               "RoundedCornerShape(\n"
-              "                                  28.dp\n"
-              "                              )",
+              "                    28.dp\n"
+              "                )",
               "RoundedCornerShape(\n"
-              "                                  24.dp\n"
-              "                              )",
-              "main card shape",
+              "                    24.dp\n"
+              "                )",
+              1,
           )
 
-          # 主卡片内边距
-          replace_once(
-              ".padding(\n"
-              "                                      horizontal = 18.dp,\n"
-              "                                      vertical = 20.dp\n"
-              "                                  ),\n"
-              "\n"
-              "                              verticalArrangement =\n"
-              "                                  Arrangement.spacedBy(\n"
-              "                                      16.dp\n"
-              "                                  )",
-              ".padding(\n"
-              "                                      horizontal = 16.dp,\n"
-              "                                      vertical = 16.dp\n"
-              "                                  ),\n"
-              "\n"
-              "                              verticalArrangement =\n"
-              "                                  Arrangement.spacedBy(\n"
-              "                                      13.dp\n"
-              "                                  )",
-              "main card padding",
+          block = re.sub(
+              r'horizontal\s*=\s*18\.dp,\s*'
+              r'vertical\s*=\s*20\.dp',
+              'horizontal = 16.dp,\n'
+              '                        vertical = 16.dp',
+              block,
+              count=1,
           )
 
-          # 标题图标区域缩小
-          replace_once(
+          block = re.sub(
+              r'Arrangement\.spacedBy\(\s*16\.dp\s*\)',
+              'Arrangement.spacedBy(\n'
+              '                    13.dp\n'
+              '                )',
+              block,
+              count=1,
+          )
+
+          # --------------------------------------------------
+          # 分享链接标题区域稍微缩小
+          # --------------------------------------------------
+
+          block = block.replace(
               "Modifier.size(\n"
-              "                                              42.dp\n"
-              "                                          )",
+              "                            42.dp\n"
+              "                        )",
               "Modifier.size(\n"
-              "                                              38.dp\n"
-              "                                          )",
-              "title icon outer size",
+              "                            38.dp\n"
+              "                        )",
+              1,
           )
 
-          replace_once(
+          block = block.replace(
               "RoundedCornerShape(\n"
-              "                                                  14.dp\n"
-              "                                              )",
+              "                                14.dp\n"
+              "                            )",
               "RoundedCornerShape(\n"
-              "                                                  12.dp\n"
-              "                                              )",
-              "title icon shape",
+              "                                12.dp\n"
+              "                            )",
+              1,
           )
 
-          replace_once(
+          block = block.replace(
               "Modifier.size(\n"
-              "                                                      42.dp\n"
-              "                                                  )",
+              "                                    42.dp\n"
+              "                                )",
               "Modifier.size(\n"
-              "                                                      38.dp\n"
-              "                                                  )",
-              "title icon inner size",
+              "                                    38.dp\n"
+              "                                )",
+              1,
           )
 
-          replace_once(
+          block = block.replace(
               "Modifier.size(\n"
-              "                                                          23.dp\n"
-              "                                                      )",
+              "                                        23.dp\n"
+              "                                    )",
               "Modifier.size(\n"
-              "                                                          21.dp\n"
-              "                                                      )",
-              "title icon image size",
+              "                                        21.dp\n"
+              "                                    )",
+              1,
           )
 
-          # 标题间距
-          replace_once(
-              "Modifier.width(\n"
-              "                                              12.dp\n"
-              "                                          )",
-              "Modifier.width(\n"
-              "                                              10.dp\n"
-              "                                          )",
-              "title spacing",
+          # --------------------------------------------------
+          # 链接输入框缩短
+          # --------------------------------------------------
+
+          block = re.sub(
+              r'\.heightIn\(\s*min\s*=\s*160\.dp\s*\)',
+              '.heightIn(\n'
+              '                                min = 145.dp\n'
+              '                            )',
+              block,
+              count=1,
           )
 
-          # 标题字号
-          replace_once(
-              "style =\n"
-              "                                          MaterialTheme\n"
-              "                                              .typography\n"
-              "                                              .titleLarge,\n"
-              "\n"
-              "                                      fontWeight =\n"
-              "                                          FontWeight.SemiBold",
-              "style =\n"
-              "                                          MaterialTheme\n"
-              "                                              .typography\n"
-              "                                              .titleMedium,\n"
-              "\n"
-              "                                      fontWeight =\n"
-              "                                          FontWeight.SemiBold",
-              "share title style",
-          )
-
-          # 链接框缩短
-          replace_once(
-              ".heightIn(\n"
-              "                                                  min = 160.dp\n"
-              "                                              )",
-              ".heightIn(\n"
-              "                                                  min = 145.dp\n"
-              "                                              )",
-              "link field height",
-          )
-
-          replace_once(
-              "RoundedCornerShape(\n"
-              "                                              22.dp\n"
-              "                                          )",
-              "RoundedCornerShape(\n"
-              "                                              18.dp\n"
-              "                                          )",
-              "link field shape",
-          )
-
-          replace_once(
+          block = block.replace(
               "minLines = 5,\n"
-              "                                      maxLines = 7,",
+              "                        maxLines = 7,",
               "minLines = 4,\n"
-              "                                      maxLines = 6,",
-              "link field lines",
+              "                        maxLines = 6,",
+              1,
           )
 
-          # 删除原来独立占一行的粘贴按钮
-          paste_block = (
-              "                              // ------------------------------------------\n"
-              "                              // 粘贴按钮\n"
-              "                              // ------------------------------------------\n"
-              "\n"
-              "                              Row(\n"
-              "                                  modifier =\n"
-              "                                      Modifier.fillMaxWidth(),\n"
-              "\n"
-              "                                  horizontalArrangement =\n"
-              "                                      Arrangement.End,\n"
-              "\n"
-              "                                  verticalAlignment =\n"
-              "                                      Alignment.CenterVertically\n"
-              "                              ) {\n"
-              "                                  FilledTonalButton(\n"
-              "                                      onClick =\n"
-              "                                          onPasteClipboard,\n"
-              "\n"
-              "                                      shape =\n"
-              "                                          RoundedCornerShape(\n"
-              "                                              18.dp\n"
-              "                                          )\n"
-              "                                  ) {\n"
-              "                                      Icon(\n"
-              "                                          imageVector =\n"
-              "                                              Icons.Outlined.ContentPaste,\n"
-              "\n"
-              "                                          contentDescription =\n"
-              "                                              null,\n"
-              "\n"
-              "                                          modifier =\n"
-              "                                              Modifier.size(\n"
-              "                                                  18.dp\n"
-              "                                              )\n"
-              "                                      )\n"
-              "\n"
-              "                                      Spacer(\n"
-              "                                          modifier =\n"
-              "                                              Modifier.width(\n"
-              "                                                  6.dp\n"
-              "                                              )\n"
-              "                                      )\n"
-              "\n"
-              "                                      Text(\n"
-              "                                          text =\n"
-              "                                              \"粘贴\",\n"
-              "\n"
-              "                                          fontWeight =\n"
-              "                                              FontWeight.Medium\n"
-              "                                      )\n"
-              "                                  }\n"
-              "                              }\n"
-              "\n"
+          # --------------------------------------------------
+          # 找到原独立粘贴按钮并删除
+          # --------------------------------------------------
+
+          paste_comment = (
+              "// ------------------------------------------\n"
+              "                // 粘贴按钮\n"
+              "                // ------------------------------------------"
           )
 
-          replace_once(
-              paste_block,
-              "",
-              "standalone paste button",
+          paste_index = block.find(paste_comment)
+
+          if paste_index == -1:
+              # 兼容不同缩进
+              match = re.search(
+                  r'//\s*-+\s*\n'
+                  r'\s*//\s*粘贴按钮\s*\n'
+                  r'\s*//\s*-+',
+                  block,
+              )
+              if not match:
+                  raise SystemExit(
+                      "Paste button section not found"
+                  )
+              paste_index = match.start()
+
+          password_match = re.search(
+              r'\n\s*//\s*-+\s*\n'
+              r'\s*//\s*提取码\s*\n'
+              r'\s*//\s*-+',
+              block[paste_index:],
           )
 
-          # 在链接输入框 Box 的右下角加入小粘贴按钮
-          old_link_end = (
-              "                                      shape =\n"
-              "                                          RoundedCornerShape(\n"
-              "                                              18.dp\n"
-              "                                          )\n"
-              "                                  )\n"
-              "                              }\n"
-              "\n"
-              "                              // ------------------------------------------\n"
-              "                              // 提取码\n"
+          if not password_match:
+              raise SystemExit(
+                  "Password section not found"
+              )
+
+          password_index = (
+              paste_index + password_match.start()
           )
 
-          new_link_end = (
-              "                                      shape =\n"
-              "                                          RoundedCornerShape(\n"
-              "                                              18.dp\n"
-              "                                          )\n"
-              "                                  )\n"
-              "\n"
-              "                                  FilledTonalButton(\n"
-              "                                      onClick = onPasteClipboard,\n"
-              "                                      modifier =\n"
-              "                                          Modifier\n"
-              "                                              .align(Alignment.BottomEnd)\n"
-              "                                              .padding(\n"
-              "                                                  end = 10.dp,\n"
-              "                                                  bottom = 10.dp\n"
-              "                                              )\n"
-              "                                              .height(36.dp),\n"
-              "                                      shape =\n"
-              "                                          RoundedCornerShape(12.dp),\n"
-              "                                      contentPadding =\n"
-              "                                          PaddingValues(\n"
-              "                                              horizontal = 10.dp,\n"
-              "                                              vertical = 0.dp\n"
-              "                                          )\n"
-              "                                  ) {\n"
-              "                                      Icon(\n"
-              "                                          imageVector =\n"
-              "                                              Icons.Outlined.ContentPaste,\n"
-              "                                          contentDescription = null,\n"
-              "                                          modifier = Modifier.size(15.dp)\n"
-              "                                      )\n"
-              "\n"
-              "                                      Spacer(\n"
-              "                                          modifier = Modifier.width(4.dp)\n"
-              "                                      )\n"
-              "\n"
-              "                                      Text(\n"
-              "                                          text = \"粘贴\",\n"
-              "                                          style =\n"
-              "                                              MaterialTheme\n"
-              "                                                  .typography\n"
-              "                                                  .labelMedium,\n"
-              "                                          fontWeight =\n"
-              "                                              FontWeight.Medium\n"
-              "                                      )\n"
-              "                                  }\n"
-              "                              }\n"
-              "\n"
-              "                              // ------------------------------------------\n"
-              "                              // 提取码\n"
+          block = (
+              block[:paste_index]
+              + block[password_index:]
           )
 
-          replace_once(
-              old_link_end,
-              new_link_end,
-              "embedded paste button",
+          # --------------------------------------------------
+          # 在链接输入框 Box 右下角放小粘贴按钮
+          # --------------------------------------------------
+
+          field_marker = 'placeholder = {'
+          field_pos = block.find(field_marker)
+
+          if field_pos == -1:
+              raise SystemExit(
+                  "Link field not found"
+              )
+
+          password_pos = block.find(
+              "// 提取码",
+              field_pos,
           )
 
-          # 提取码稍微紧凑
-          replace_once(
-              "RoundedCornerShape(\n"
-              "                                          20.dp\n"
-              "                                      )",
-              "RoundedCornerShape(\n"
-              "                                          16.dp\n"
-              "                                      )",
-              "password field shape",
+          if password_pos == -1:
+              raise SystemExit(
+                  "Password marker not found"
+              )
+
+          before_password = block[:password_pos]
+
+          # 找输入框外层 Box 关闭位置：
+          # OutlinedTextField 结束后紧跟 Box 的 }
+          matches = list(
+              re.finditer(
+                  r'\n\s*\)\s*\n\s*\}\s*\n',
+                  before_password[field_pos:],
+              )
           )
 
-          # 主按钮缩短
-          replace_once(
-              ".height(\n"
-              "                                              58.dp\n"
-              "                                          )",
-              ".height(\n"
-              "                                              54.dp\n"
-              "                                          )",
-              "resolve button height",
+          if not matches:
+              raise SystemExit(
+                  "Link input box end not found"
+              )
+
+          m = matches[-1]
+
+          insert_pos = (
+              field_pos
+              + m.start()
           )
 
-          # 删除按钮末尾箭头
-          arrow_block = (
-              "                                      Spacer(\n"
-              "                                          modifier =\n"
-              "                                              Modifier.width(\n"
-              "                                                  8.dp\n"
-              "                                              )\n"
-              "                                      )\n"
-              "\n"
-              "                                      Text(\n"
-              "                                          text =\n"
-              "                                              \"→\",\n"
-              "\n"
-              "                                          style =\n"
-              "                                              MaterialTheme\n"
-              "                                                  .typography\n"
-              "                                                  .titleLarge\n"
-              "                                      )\n"
+          original_end = (
+              before_password[
+                  insert_pos:
+                  field_pos + m.end()
+              ]
           )
 
-          replace_once(
-              arrow_block,
-              "",
-              "resolve arrow",
+          paste_button = '''
+                                  )
+
+                                  FilledTonalButton(
+                                      onClick = onPasteClipboard,
+                                      modifier =
+                                          Modifier
+                                              .align(
+                                                  Alignment.BottomEnd
+                                              )
+                                              .padding(
+                                                  end = 10.dp,
+                                                  bottom = 10.dp
+                                              )
+                                              .height(36.dp),
+                                      shape =
+                                          RoundedCornerShape(
+                                              12.dp
+                                          ),
+                                      contentPadding =
+                                          PaddingValues(
+                                              horizontal = 10.dp,
+                                              vertical = 0.dp
+                                          )
+                                  ) {
+                                      Icon(
+                                          imageVector =
+                                              Icons.Outlined.ContentPaste,
+                                          contentDescription = null,
+                                          modifier =
+                                              Modifier.size(15.dp)
+                                      )
+
+                                      Spacer(
+                                          modifier =
+                                              Modifier.width(4.dp)
+                                      )
+
+                                      Text(
+                                          text = "粘贴",
+                                          style =
+                                              MaterialTheme
+                                                  .typography
+                                                  .labelMedium,
+                                          fontWeight =
+                                              FontWeight.Medium
+                                      )
+                                  }
+                              }
+          '''
+
+          # 原位置只保留 OutlinedTextField 的 )，
+          # 再插入按钮和 Box 的 }
+          block = (
+              block[:insert_pos]
+              + paste_button
+              + block[field_pos + m.end():]
           )
 
-          # 空历史时完全不显示提示文字
-          empty_history = (
-              "                      } else {\n"
-              "\n"
-              "                          // 没有历史时保持干净，不再展示支持平台卡片\n"
-              "                          Text(\n"
-              "                              text =\n"
-              "                                  \"解析过的分享链接会显示在这里\",\n"
-              "\n"
-              "                              style =\n"
-              "                                  MaterialTheme\n"
-              "                                      .typography\n"
-              "                                      .bodySmall,\n"
-              "\n"
-              "                              color =\n"
-              "                                  MaterialTheme\n"
-              "                                      .colorScheme\n"
-              "                                      .onSurfaceVariant,\n"
-              "\n"
-              "                              modifier =\n"
-              "                                  Modifier\n"
-              "                                      .fillMaxWidth()\n"
-              "                                      .padding(\n"
-              "                                          horizontal = 4.dp,\n"
-              "                                          vertical = 2.dp\n"
-              "                                      )\n"
-              "                          )\n"
-              "                      }\n"
-              "\n"
-              "                      Spacer(\n"
+          # --------------------------------------------------
+          # 提取码和主按钮更紧凑
+          # --------------------------------------------------
+
+          block = re.sub(
+              r'RoundedCornerShape\(\s*20\.dp\s*\)',
+              'RoundedCornerShape(\n'
+              '                        16.dp\n'
+              '                    )',
+              block,
+              count=1,
           )
 
-          clean_history = (
-              "                      }\n"
-              "\n"
-              "                      Spacer(\n"
+          block = re.sub(
+              r'\.height\(\s*58\.dp\s*\)',
+              '.height(\n'
+              '                            54.dp\n'
+              '                        )',
+              block,
+              count=1,
           )
 
-          replace_once(
-              empty_history,
-              clean_history,
-              "empty history message",
+          # --------------------------------------------------
+          # 删除“开始解析”后的箭头
+          # --------------------------------------------------
+
+          block = re.sub(
+              r'\s*Spacer\(\s*'
+              r'modifier\s*=\s*'
+              r'Modifier\.width\(\s*8\.dp\s*\)\s*'
+              r'\)\s*'
+              r'Text\(\s*'
+              r'text\s*=\s*"→",\s*'
+              r'style\s*=\s*'
+              r'MaterialTheme\s*'
+              r'\.typography\s*'
+              r'\.titleLarge\s*'
+              r'\)',
+              '',
+              block,
+              count=1,
+              flags=re.S,
           )
 
+          # --------------------------------------------------
+          # 没历史记录时不显示提示
+          # --------------------------------------------------
+
+          block = re.sub(
+              r'\}\s*else\s*\{\s*'
+              r'//\s*没有历史时保持干净.*?'
+              r'Text\(\s*'
+              r'text\s*=\s*'
+              r'"解析过的分享链接会显示在这里".*?'
+              r'\)\s*'
+              r'\}',
+              '}',
+              block,
+              count=1,
+              flags=re.S,
+          )
+
+          # --------------------------------------------------
           # PaddingValues import
+          # --------------------------------------------------
+
+          full = prefix + block + suffix
+
           padding_import = (
               "import androidx.compose.foundation.layout.PaddingValues\n"
           )
 
-          if padding_import not in text:
+          if padding_import not in full:
               anchor = (
                   "import androidx.compose.foundation.layout.Column\n"
               )
 
-              if anchor not in text:
+              if anchor not in full:
                   raise SystemExit(
                       "Column import not found"
                   )
 
-              text = text.replace(
+              full = full.replace(
                   anchor,
                   anchor + padding_import,
                   1,
               )
 
           path.write_text(
-              text,
+              full,
               encoding="utf-8",
           )
           PY
@@ -526,7 +492,6 @@ jobs:
 
           test -f "$APK"
 
-          echo "Polished preview APK:"
           ls -lh "$APK"
 
       - name: Upload preview APK
@@ -540,6 +505,8 @@ jobs:
       - name: Commit polished UI
         shell: bash
         run: |
+          git diff --check
+
           if git diff --quiet -- \
             app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt
           then
