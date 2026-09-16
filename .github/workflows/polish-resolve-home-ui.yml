@@ -1,0 +1,598 @@
+name: Polish Resolve Home UI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  YUNX_USE_MIRROR: "false"
+
+jobs:
+  polish:
+    name: Polish resolve home UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Polish resolve home layout
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt"
+          )
+
+          text = path.read_text(encoding="utf-8")
+
+          replacements = [
+              # 页面左右边距稍微增加，整体更精致
+              (
+                  """.padding(
+                                  horizontal = 16.dp,
+                                  vertical = 14.dp
+                              ),
+
+                      verticalArrangement =
+                          Arrangement.spacedBy(
+                              20.dp
+                          )""",
+
+                  """.padding(
+                                  horizontal = 18.dp,
+                                  vertical = 12.dp
+                              ),
+
+                      verticalArrangement =
+                          Arrangement.spacedBy(
+                              18.dp
+                          )"""
+              ),
+
+              # 主卡片圆角略微收敛
+              (
+                  """RoundedCornerShape(
+                                  28.dp
+                              )""",
+
+                  """RoundedCornerShape(
+                                  24.dp
+                              )"""
+              ),
+
+              # 主卡片内部空间压缩
+              (
+                  """.padding(
+                                      horizontal = 18.dp,
+                                      vertical = 20.dp
+                                  ),
+
+                              verticalArrangement =
+                                  Arrangement.spacedBy(
+                                      16.dp
+                                  )""",
+
+                  """.padding(
+                                      horizontal = 16.dp,
+                                      vertical = 16.dp
+                                  ),
+
+                              verticalArrangement =
+                                  Arrangement.spacedBy(
+                                      13.dp
+                                  )"""
+              ),
+
+              # 分享链接图标容器缩小
+              (
+                  """Modifier.size(
+                                              42.dp
+                                          )""",
+
+                  """Modifier.size(
+                                              38.dp
+                                          )"""
+              ),
+
+              (
+                  """RoundedCornerShape(
+                                                  14.dp
+                                              )""",
+
+                  """RoundedCornerShape(
+                                                  12.dp
+                                              )"""
+              ),
+
+              (
+                  """Modifier.size(
+                                                      42.dp
+                                                  )""",
+
+                  """Modifier.size(
+                                                      38.dp
+                                                  )"""
+              ),
+
+              (
+                  """Modifier.size(
+                                                          23.dp
+                                                      )""",
+
+                  """Modifier.size(
+                                                          21.dp
+                                                      )"""
+              ),
+
+              # 标题与图标距离
+              (
+                  """Modifier.width(
+                                              12.dp
+                                          )""",
+
+                  """Modifier.width(
+                                              10.dp
+                                          )"""
+              ),
+
+              # 分享链接标题稍微收小
+              (
+                  """style =
+                                          MaterialTheme
+                                              .typography
+                                              .titleLarge,
+
+                                      fontWeight =
+                                          FontWeight.SemiBold""",
+
+                  """style =
+                                          MaterialTheme
+                                              .typography
+                                              .titleMedium,
+
+                                      fontWeight =
+                                          FontWeight.SemiBold"""
+              ),
+
+              # 输入框高度大幅缩短
+              (
+                  """.heightIn(
+                                                  min = 160.dp
+                                              )""",
+
+                  """.heightIn(
+                                                  min = 150.dp
+                                              )"""
+              ),
+
+              # 输入框圆角略收敛
+              (
+                  """RoundedCornerShape(
+                                              22.dp
+                                          )""",
+
+                  """RoundedCornerShape(
+                                              18.dp
+                                          )"""
+              ),
+
+              # 输入框行数减少
+              (
+                  """minLines = 5,
+                                      maxLines = 7,""",
+
+                  """minLines = 4,
+                                      maxLines = 6,"""
+              ),
+
+              # 提取码圆角
+              (
+                  """RoundedCornerShape(
+                                          20.dp
+                                      )""",
+
+                  """RoundedCornerShape(
+                                          16.dp
+                                      )"""
+              ),
+
+              # 主按钮高度稍微缩小
+              (
+                  """.height(
+                                              58.dp
+                                          )""",
+
+                  """.height(
+                                              54.dp
+                                          )"""
+              ),
+          ]
+
+          for old, new in replacements:
+              if old in text:
+                  text = text.replace(
+                      old,
+                      new,
+                      1,
+                  )
+              else:
+                  print(
+                      "Optional block not found:",
+                      old[:80].replace("\n", " ")
+                  )
+
+          # --------------------------------------------------
+          # 删除原来单独占一行的粘贴按钮
+          # --------------------------------------------------
+
+          paste_start = """                              // ------------------------------------------
+                              // 粘贴按钮
+                              // ------------------------------------------
+
+                              Row(
+                                  modifier =
+                                      Modifier.fillMaxWidth(),
+
+                                  horizontalArrangement =
+                                      Arrangement.End,
+
+                                  verticalAlignment =
+                                      Alignment.CenterVertically
+                              ) {
+                                  FilledTonalButton(
+                                      onClick =
+                                          onPasteClipboard,
+
+                                      shape =
+                                          RoundedCornerShape(
+                                              18.dp
+                                          )
+                                  ) {
+                                      Icon(
+                                          imageVector =
+                                              Icons.Outlined.ContentPaste,
+
+                                          contentDescription =
+                                              null,
+
+                                          modifier =
+                                              Modifier.size(
+                                                  18.dp
+                                              )
+                                      )
+
+                                      Spacer(
+                                          modifier =
+                                              Modifier.width(
+                                                  6.dp
+                                              )
+                                      )
+
+                                      Text(
+                                          text =
+                                              "粘贴",
+
+                                          fontWeight =
+                                              FontWeight.Medium
+                                      )
+                                  }
+                              }
+
+          """
+
+          if paste_start not in text:
+              raise SystemExit(
+                  "Original paste button block not found"
+              )
+
+          text = text.replace(
+              paste_start,
+              "",
+              1,
+          )
+
+          # --------------------------------------------------
+          # 把粘贴按钮嵌入链接输入区域右下角
+          # --------------------------------------------------
+
+          old_box_end = """                                      shape =
+                                          RoundedCornerShape(
+                                              18.dp
+                                          )
+                                  )
+                              }
+
+                              // ------------------------------------------
+                              // 提取码
+"""
+
+          new_box_end = """                                      shape =
+                                          RoundedCornerShape(
+                                              18.dp
+                                          )
+                                  )
+
+                                  FilledTonalButton(
+                                      onClick =
+                                          onPasteClipboard,
+
+                                      modifier =
+                                          Modifier
+                                              .align(
+                                                  Alignment.BottomEnd
+                                              )
+                                              .padding(
+                                                  end = 10.dp,
+                                                  bottom = 10.dp
+                                              )
+                                              .height(
+                                                  38.dp
+                                              ),
+
+                                      shape =
+                                          RoundedCornerShape(
+                                              14.dp
+                                          ),
+
+                                      contentPadding =
+                                          PaddingValues(
+                                              horizontal = 12.dp,
+                                              vertical = 0.dp
+                                          )
+                                  ) {
+                                      Icon(
+                                          imageVector =
+                                              Icons.Outlined.ContentPaste,
+
+                                          contentDescription =
+                                              null,
+
+                                          modifier =
+                                              Modifier.size(
+                                                  16.dp
+                                              )
+                                      )
+
+                                      Spacer(
+                                          modifier =
+                                              Modifier.width(
+                                                  5.dp
+                                              )
+                                      )
+
+                                      Text(
+                                          text =
+                                              "粘贴",
+
+                                          style =
+                                              MaterialTheme
+                                                  .typography
+                                                  .labelLarge,
+
+                                          fontWeight =
+                                              FontWeight.Medium
+                                      )
+                                  }
+                              }
+
+                              // ------------------------------------------
+                              // 提取码
+"""
+
+          if old_box_end not in text:
+              raise SystemExit(
+                  "Link input box end not found"
+              )
+
+          text = text.replace(
+              old_box_end,
+              new_box_end,
+              1,
+          )
+
+          # --------------------------------------------------
+          # 去掉开始解析按钮里的箭头
+          # --------------------------------------------------
+
+          arrow_block = """                                      Spacer(
+                                          modifier =
+                                              Modifier.width(
+                                                  8.dp
+                                              )
+                                      )
+
+                                      Text(
+                                          text =
+                                              "→",
+
+                                          style =
+                                              MaterialTheme
+                                                  .typography
+                                                  .titleLarge
+                                      )
+"""
+
+          if arrow_block in text:
+              text = text.replace(
+                  arrow_block,
+                  "",
+                  1,
+              )
+
+          # --------------------------------------------------
+          # 没有历史记录时不显示任何提示
+          # --------------------------------------------------
+
+          empty_history = """                      } else {
+
+                          // 没有历史时保持干净，不再展示支持平台卡片
+                          Text(
+                              text =
+                                  "解析过的分享链接会显示在这里",
+
+                              style =
+                                  MaterialTheme
+                                      .typography
+                                      .bodySmall,
+
+                              color =
+                                  MaterialTheme
+                                      .colorScheme
+                                      .onSurfaceVariant,
+
+                              modifier =
+                                  Modifier
+                                      .fillMaxWidth()
+                                      .padding(
+                                          horizontal = 4.dp,
+                                          vertical = 2.dp
+                                      )
+                          )
+                      }
+
+                      Spacer(
+"""
+
+          clean_history = """                      }
+
+                      Spacer(
+"""
+
+          if empty_history not in text:
+              raise SystemExit(
+                  "Empty history block not found"
+              )
+
+          text = text.replace(
+              empty_history,
+              clean_history,
+              1,
+          )
+
+          path.write_text(
+              text,
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Verify source diff
+        shell: bash
+        run: |
+          git diff --check
+
+          git diff -- \
+            app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          test -x "$SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0"
+
+      - name: Configure build
+        shell: bash
+        run: |
+          sed -i \
+            '/aapt2FromMavenOverride/d' \
+            gradle.properties
+
+          printf \
+            'sdk.dir=%s\n' \
+            "$ANDROID_HOME" \
+            > local.properties
+
+          chmod +x gradlew
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            testDebugUnitTest
+
+      - name: Run Android Lint
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            lintDebug
+
+      - name: Build preview APK
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          test -f "$APK"
+
+          echo "Polished preview APK:"
+          ls -lh "$APK"
+
+      - name: Upload preview APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: XingChen-Assistant-Resolve-Polished
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Commit polished UI
+        shell: bash
+        run: |
+          if git diff --quiet -- \
+            app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt
+          then
+            echo "No source changes to commit"
+            exit 0
+          fi
+
+          git config \
+            user.name \
+            "github-actions[bot]"
+
+          git config \
+            user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt
+
+          git commit \
+            -m "style: polish resolve home layout"
+
+          git push \
+            origin \
+            HEAD:main
