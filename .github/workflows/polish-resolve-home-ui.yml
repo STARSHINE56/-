@@ -31,449 +31,417 @@ jobs:
 
           text = path.read_text(encoding="utf-8")
 
-          replacements = [
-              # 页面左右边距稍微增加，整体更精致
-              (
-                  """.padding(
-                                  horizontal = 16.dp,
-                                  vertical = 14.dp
-                              ),
-
-                      verticalArrangement =
-                          Arrangement.spacedBy(
-                              20.dp
-                          )""",
-
-                  """.padding(
-                                  horizontal = 18.dp,
-                                  vertical = 12.dp
-                              ),
-
-                      verticalArrangement =
-                          Arrangement.spacedBy(
-                              18.dp
-                          )"""
-              ),
-
-              # 主卡片圆角略微收敛
-              (
-                  """RoundedCornerShape(
-                                  28.dp
-                              )""",
-
-                  """RoundedCornerShape(
-                                  24.dp
-                              )"""
-              ),
-
-              # 主卡片内部空间压缩
-              (
-                  """.padding(
-                                      horizontal = 18.dp,
-                                      vertical = 20.dp
-                                  ),
-
-                              verticalArrangement =
-                                  Arrangement.spacedBy(
-                                      16.dp
-                                  )""",
-
-                  """.padding(
-                                      horizontal = 16.dp,
-                                      vertical = 16.dp
-                                  ),
-
-                              verticalArrangement =
-                                  Arrangement.spacedBy(
-                                      13.dp
-                                  )"""
-              ),
-
-              # 分享链接图标容器缩小
-              (
-                  """Modifier.size(
-                                              42.dp
-                                          )""",
-
-                  """Modifier.size(
-                                              38.dp
-                                          )"""
-              ),
-
-              (
-                  """RoundedCornerShape(
-                                                  14.dp
-                                              )""",
-
-                  """RoundedCornerShape(
-                                                  12.dp
-                                              )"""
-              ),
-
-              (
-                  """Modifier.size(
-                                                      42.dp
-                                                  )""",
-
-                  """Modifier.size(
-                                                      38.dp
-                                                  )"""
-              ),
-
-              (
-                  """Modifier.size(
-                                                          23.dp
-                                                      )""",
-
-                  """Modifier.size(
-                                                          21.dp
-                                                      )"""
-              ),
-
-              # 标题与图标距离
-              (
-                  """Modifier.width(
-                                              12.dp
-                                          )""",
-
-                  """Modifier.width(
-                                              10.dp
-                                          )"""
-              ),
-
-              # 分享链接标题稍微收小
-              (
-                  """style =
-                                          MaterialTheme
-                                              .typography
-                                              .titleLarge,
-
-                                      fontWeight =
-                                          FontWeight.SemiBold""",
-
-                  """style =
-                                          MaterialTheme
-                                              .typography
-                                              .titleMedium,
-
-                                      fontWeight =
-                                          FontWeight.SemiBold"""
-              ),
-
-              # 输入框高度大幅缩短
-              (
-                  """.heightIn(
-                                                  min = 160.dp
-                                              )""",
-
-                  """.heightIn(
-                                                  min = 150.dp
-                                              )"""
-              ),
-
-              # 输入框圆角略收敛
-              (
-                  """RoundedCornerShape(
-                                              22.dp
-                                          )""",
-
-                  """RoundedCornerShape(
-                                              18.dp
-                                          )"""
-              ),
-
-              # 输入框行数减少
-              (
-                  """minLines = 5,
-                                      maxLines = 7,""",
-
-                  """minLines = 4,
-                                      maxLines = 6,"""
-              ),
-
-              # 提取码圆角
-              (
-                  """RoundedCornerShape(
-                                          20.dp
-                                      )""",
-
-                  """RoundedCornerShape(
-                                          16.dp
-                                      )"""
-              ),
-
-              # 主按钮高度稍微缩小
-              (
-                  """.height(
-                                              58.dp
-                                          )""",
-
-                  """.height(
-                                              54.dp
-                                          )"""
-              ),
-          ]
-
-          for old, new in replacements:
-              if old in text:
-                  text = text.replace(
-                      old,
-                      new,
-                      1,
+          def replace_once(old, new, name):
+              global text
+              if old not in text:
+                  raise SystemExit(
+                      f"Required block not found: {name}"
                   )
-              else:
-                  print(
-                      "Optional block not found:",
-                      old[:80].replace("\n", " ")
-                  )
+              text = text.replace(old, new, 1)
 
-          # --------------------------------------------------
-          # 删除原来单独占一行的粘贴按钮
-          # --------------------------------------------------
+          # 页面边距
+          replace_once(
+              ".padding(\n"
+              "                                  horizontal = 16.dp,\n"
+              "                                  vertical = 14.dp\n"
+              "                              ),\n"
+              "\n"
+              "                      verticalArrangement =\n"
+              "                          Arrangement.spacedBy(\n"
+              "                              20.dp\n"
+              "                          )",
+              ".padding(\n"
+              "                                  horizontal = 18.dp,\n"
+              "                                  vertical = 12.dp\n"
+              "                              ),\n"
+              "\n"
+              "                      verticalArrangement =\n"
+              "                          Arrangement.spacedBy(\n"
+              "                              18.dp\n"
+              "                          )",
+              "page spacing",
+          )
 
-          paste_start = """                              // ------------------------------------------
-                              // 粘贴按钮
-                              // ------------------------------------------
+          # 主卡片圆角
+          replace_once(
+              "RoundedCornerShape(\n"
+              "                                  28.dp\n"
+              "                              )",
+              "RoundedCornerShape(\n"
+              "                                  24.dp\n"
+              "                              )",
+              "main card shape",
+          )
 
-                              Row(
-                                  modifier =
-                                      Modifier.fillMaxWidth(),
+          # 主卡片内边距
+          replace_once(
+              ".padding(\n"
+              "                                      horizontal = 18.dp,\n"
+              "                                      vertical = 20.dp\n"
+              "                                  ),\n"
+              "\n"
+              "                              verticalArrangement =\n"
+              "                                  Arrangement.spacedBy(\n"
+              "                                      16.dp\n"
+              "                                  )",
+              ".padding(\n"
+              "                                      horizontal = 16.dp,\n"
+              "                                      vertical = 16.dp\n"
+              "                                  ),\n"
+              "\n"
+              "                              verticalArrangement =\n"
+              "                                  Arrangement.spacedBy(\n"
+              "                                      13.dp\n"
+              "                                  )",
+              "main card padding",
+          )
 
-                                  horizontalArrangement =
-                                      Arrangement.End,
+          # 标题图标区域缩小
+          replace_once(
+              "Modifier.size(\n"
+              "                                              42.dp\n"
+              "                                          )",
+              "Modifier.size(\n"
+              "                                              38.dp\n"
+              "                                          )",
+              "title icon outer size",
+          )
 
-                                  verticalAlignment =
-                                      Alignment.CenterVertically
-                              ) {
-                                  FilledTonalButton(
-                                      onClick =
-                                          onPasteClipboard,
+          replace_once(
+              "RoundedCornerShape(\n"
+              "                                                  14.dp\n"
+              "                                              )",
+              "RoundedCornerShape(\n"
+              "                                                  12.dp\n"
+              "                                              )",
+              "title icon shape",
+          )
 
-                                      shape =
-                                          RoundedCornerShape(
-                                              18.dp
-                                          )
-                                  ) {
-                                      Icon(
-                                          imageVector =
-                                              Icons.Outlined.ContentPaste,
+          replace_once(
+              "Modifier.size(\n"
+              "                                                      42.dp\n"
+              "                                                  )",
+              "Modifier.size(\n"
+              "                                                      38.dp\n"
+              "                                                  )",
+              "title icon inner size",
+          )
 
-                                          contentDescription =
-                                              null,
+          replace_once(
+              "Modifier.size(\n"
+              "                                                          23.dp\n"
+              "                                                      )",
+              "Modifier.size(\n"
+              "                                                          21.dp\n"
+              "                                                      )",
+              "title icon image size",
+          )
 
-                                          modifier =
-                                              Modifier.size(
-                                                  18.dp
-                                              )
-                                      )
+          # 标题间距
+          replace_once(
+              "Modifier.width(\n"
+              "                                              12.dp\n"
+              "                                          )",
+              "Modifier.width(\n"
+              "                                              10.dp\n"
+              "                                          )",
+              "title spacing",
+          )
 
-                                      Spacer(
-                                          modifier =
-                                              Modifier.width(
-                                                  6.dp
-                                              )
-                                      )
+          # 标题字号
+          replace_once(
+              "style =\n"
+              "                                          MaterialTheme\n"
+              "                                              .typography\n"
+              "                                              .titleLarge,\n"
+              "\n"
+              "                                      fontWeight =\n"
+              "                                          FontWeight.SemiBold",
+              "style =\n"
+              "                                          MaterialTheme\n"
+              "                                              .typography\n"
+              "                                              .titleMedium,\n"
+              "\n"
+              "                                      fontWeight =\n"
+              "                                          FontWeight.SemiBold",
+              "share title style",
+          )
 
-                                      Text(
-                                          text =
-                                              "粘贴",
+          # 链接框缩短
+          replace_once(
+              ".heightIn(\n"
+              "                                                  min = 160.dp\n"
+              "                                              )",
+              ".heightIn(\n"
+              "                                                  min = 145.dp\n"
+              "                                              )",
+              "link field height",
+          )
 
-                                          fontWeight =
-                                              FontWeight.Medium
-                                      )
-                                  }
-                              }
+          replace_once(
+              "RoundedCornerShape(\n"
+              "                                              22.dp\n"
+              "                                          )",
+              "RoundedCornerShape(\n"
+              "                                              18.dp\n"
+              "                                          )",
+              "link field shape",
+          )
 
-          """
+          replace_once(
+              "minLines = 5,\n"
+              "                                      maxLines = 7,",
+              "minLines = 4,\n"
+              "                                      maxLines = 6,",
+              "link field lines",
+          )
 
-          if paste_start not in text:
-              raise SystemExit(
-                  "Original paste button block not found"
-              )
+          # 删除原来独立占一行的粘贴按钮
+          paste_block = (
+              "                              // ------------------------------------------\n"
+              "                              // 粘贴按钮\n"
+              "                              // ------------------------------------------\n"
+              "\n"
+              "                              Row(\n"
+              "                                  modifier =\n"
+              "                                      Modifier.fillMaxWidth(),\n"
+              "\n"
+              "                                  horizontalArrangement =\n"
+              "                                      Arrangement.End,\n"
+              "\n"
+              "                                  verticalAlignment =\n"
+              "                                      Alignment.CenterVertically\n"
+              "                              ) {\n"
+              "                                  FilledTonalButton(\n"
+              "                                      onClick =\n"
+              "                                          onPasteClipboard,\n"
+              "\n"
+              "                                      shape =\n"
+              "                                          RoundedCornerShape(\n"
+              "                                              18.dp\n"
+              "                                          )\n"
+              "                                  ) {\n"
+              "                                      Icon(\n"
+              "                                          imageVector =\n"
+              "                                              Icons.Outlined.ContentPaste,\n"
+              "\n"
+              "                                          contentDescription =\n"
+              "                                              null,\n"
+              "\n"
+              "                                          modifier =\n"
+              "                                              Modifier.size(\n"
+              "                                                  18.dp\n"
+              "                                              )\n"
+              "                                      )\n"
+              "\n"
+              "                                      Spacer(\n"
+              "                                          modifier =\n"
+              "                                              Modifier.width(\n"
+              "                                                  6.dp\n"
+              "                                              )\n"
+              "                                      )\n"
+              "\n"
+              "                                      Text(\n"
+              "                                          text =\n"
+              "                                              \"粘贴\",\n"
+              "\n"
+              "                                          fontWeight =\n"
+              "                                              FontWeight.Medium\n"
+              "                                      )\n"
+              "                                  }\n"
+              "                              }\n"
+              "\n"
+          )
 
-          text = text.replace(
-              paste_start,
+          replace_once(
+              paste_block,
               "",
-              1,
+              "standalone paste button",
           )
 
-          # --------------------------------------------------
-          # 把粘贴按钮嵌入链接输入区域右下角
-          # --------------------------------------------------
-
-          old_box_end = """                                      shape =
-                                          RoundedCornerShape(
-                                              18.dp
-                                          )
-                                  )
-                              }
-
-                              // ------------------------------------------
-                              // 提取码
-"""
-
-          new_box_end = """                                      shape =
-                                          RoundedCornerShape(
-                                              18.dp
-                                          )
-                                  )
-
-                                  FilledTonalButton(
-                                      onClick =
-                                          onPasteClipboard,
-
-                                      modifier =
-                                          Modifier
-                                              .align(
-                                                  Alignment.BottomEnd
-                                              )
-                                              .padding(
-                                                  end = 10.dp,
-                                                  bottom = 10.dp
-                                              )
-                                              .height(
-                                                  38.dp
-                                              ),
-
-                                      shape =
-                                          RoundedCornerShape(
-                                              14.dp
-                                          ),
-
-                                      contentPadding =
-                                          PaddingValues(
-                                              horizontal = 12.dp,
-                                              vertical = 0.dp
-                                          )
-                                  ) {
-                                      Icon(
-                                          imageVector =
-                                              Icons.Outlined.ContentPaste,
-
-                                          contentDescription =
-                                              null,
-
-                                          modifier =
-                                              Modifier.size(
-                                                  16.dp
-                                              )
-                                      )
-
-                                      Spacer(
-                                          modifier =
-                                              Modifier.width(
-                                                  5.dp
-                                              )
-                                      )
-
-                                      Text(
-                                          text =
-                                              "粘贴",
-
-                                          style =
-                                              MaterialTheme
-                                                  .typography
-                                                  .labelLarge,
-
-                                          fontWeight =
-                                              FontWeight.Medium
-                                      )
-                                  }
-                              }
-
-                              // ------------------------------------------
-                              // 提取码
-"""
-
-          if old_box_end not in text:
-              raise SystemExit(
-                  "Link input box end not found"
-              )
-
-          text = text.replace(
-              old_box_end,
-              new_box_end,
-              1,
+          # 在链接输入框 Box 的右下角加入小粘贴按钮
+          old_link_end = (
+              "                                      shape =\n"
+              "                                          RoundedCornerShape(\n"
+              "                                              18.dp\n"
+              "                                          )\n"
+              "                                  )\n"
+              "                              }\n"
+              "\n"
+              "                              // ------------------------------------------\n"
+              "                              // 提取码\n"
           )
 
-          # --------------------------------------------------
-          # 去掉开始解析按钮里的箭头
-          # --------------------------------------------------
+          new_link_end = (
+              "                                      shape =\n"
+              "                                          RoundedCornerShape(\n"
+              "                                              18.dp\n"
+              "                                          )\n"
+              "                                  )\n"
+              "\n"
+              "                                  FilledTonalButton(\n"
+              "                                      onClick = onPasteClipboard,\n"
+              "                                      modifier =\n"
+              "                                          Modifier\n"
+              "                                              .align(Alignment.BottomEnd)\n"
+              "                                              .padding(\n"
+              "                                                  end = 10.dp,\n"
+              "                                                  bottom = 10.dp\n"
+              "                                              )\n"
+              "                                              .height(36.dp),\n"
+              "                                      shape =\n"
+              "                                          RoundedCornerShape(12.dp),\n"
+              "                                      contentPadding =\n"
+              "                                          PaddingValues(\n"
+              "                                              horizontal = 10.dp,\n"
+              "                                              vertical = 0.dp\n"
+              "                                          )\n"
+              "                                  ) {\n"
+              "                                      Icon(\n"
+              "                                          imageVector =\n"
+              "                                              Icons.Outlined.ContentPaste,\n"
+              "                                          contentDescription = null,\n"
+              "                                          modifier = Modifier.size(15.dp)\n"
+              "                                      )\n"
+              "\n"
+              "                                      Spacer(\n"
+              "                                          modifier = Modifier.width(4.dp)\n"
+              "                                      )\n"
+              "\n"
+              "                                      Text(\n"
+              "                                          text = \"粘贴\",\n"
+              "                                          style =\n"
+              "                                              MaterialTheme\n"
+              "                                                  .typography\n"
+              "                                                  .labelMedium,\n"
+              "                                          fontWeight =\n"
+              "                                              FontWeight.Medium\n"
+              "                                      )\n"
+              "                                  }\n"
+              "                              }\n"
+              "\n"
+              "                              // ------------------------------------------\n"
+              "                              // 提取码\n"
+          )
 
-          arrow_block = """                                      Spacer(
-                                          modifier =
-                                              Modifier.width(
-                                                  8.dp
-                                              )
-                                      )
+          replace_once(
+              old_link_end,
+              new_link_end,
+              "embedded paste button",
+          )
 
-                                      Text(
-                                          text =
-                                              "→",
+          # 提取码稍微紧凑
+          replace_once(
+              "RoundedCornerShape(\n"
+              "                                          20.dp\n"
+              "                                      )",
+              "RoundedCornerShape(\n"
+              "                                          16.dp\n"
+              "                                      )",
+              "password field shape",
+          )
 
-                                          style =
-                                              MaterialTheme
-                                                  .typography
-                                                  .titleLarge
-                                      )
-"""
+          # 主按钮缩短
+          replace_once(
+              ".height(\n"
+              "                                              58.dp\n"
+              "                                          )",
+              ".height(\n"
+              "                                              54.dp\n"
+              "                                          )",
+              "resolve button height",
+          )
 
-          if arrow_block in text:
-              text = text.replace(
-                  arrow_block,
-                  "",
-                  1,
-              )
+          # 删除按钮末尾箭头
+          arrow_block = (
+              "                                      Spacer(\n"
+              "                                          modifier =\n"
+              "                                              Modifier.width(\n"
+              "                                                  8.dp\n"
+              "                                              )\n"
+              "                                      )\n"
+              "\n"
+              "                                      Text(\n"
+              "                                          text =\n"
+              "                                              \"→\",\n"
+              "\n"
+              "                                          style =\n"
+              "                                              MaterialTheme\n"
+              "                                                  .typography\n"
+              "                                                  .titleLarge\n"
+              "                                      )\n"
+          )
 
-          # --------------------------------------------------
-          # 没有历史记录时不显示任何提示
-          # --------------------------------------------------
+          replace_once(
+              arrow_block,
+              "",
+              "resolve arrow",
+          )
 
-          empty_history = """                      } else {
+          # 空历史时完全不显示提示文字
+          empty_history = (
+              "                      } else {\n"
+              "\n"
+              "                          // 没有历史时保持干净，不再展示支持平台卡片\n"
+              "                          Text(\n"
+              "                              text =\n"
+              "                                  \"解析过的分享链接会显示在这里\",\n"
+              "\n"
+              "                              style =\n"
+              "                                  MaterialTheme\n"
+              "                                      .typography\n"
+              "                                      .bodySmall,\n"
+              "\n"
+              "                              color =\n"
+              "                                  MaterialTheme\n"
+              "                                      .colorScheme\n"
+              "                                      .onSurfaceVariant,\n"
+              "\n"
+              "                              modifier =\n"
+              "                                  Modifier\n"
+              "                                      .fillMaxWidth()\n"
+              "                                      .padding(\n"
+              "                                          horizontal = 4.dp,\n"
+              "                                          vertical = 2.dp\n"
+              "                                      )\n"
+              "                          )\n"
+              "                      }\n"
+              "\n"
+              "                      Spacer(\n"
+          )
 
-                          // 没有历史时保持干净，不再展示支持平台卡片
-                          Text(
-                              text =
-                                  "解析过的分享链接会显示在这里",
+          clean_history = (
+              "                      }\n"
+              "\n"
+              "                      Spacer(\n"
+          )
 
-                              style =
-                                  MaterialTheme
-                                      .typography
-                                      .bodySmall,
-
-                              color =
-                                  MaterialTheme
-                                      .colorScheme
-                                      .onSurfaceVariant,
-
-                              modifier =
-                                  Modifier
-                                      .fillMaxWidth()
-                                      .padding(
-                                          horizontal = 4.dp,
-                                          vertical = 2.dp
-                                      )
-                          )
-                      }
-
-                      Spacer(
-"""
-
-          clean_history = """                      }
-
-                      Spacer(
-"""
-
-          if empty_history not in text:
-              raise SystemExit(
-                  "Empty history block not found"
-              )
-
-          text = text.replace(
+          replace_once(
               empty_history,
               clean_history,
-              1,
+              "empty history message",
           )
+
+          # PaddingValues import
+          padding_import = (
+              "import androidx.compose.foundation.layout.PaddingValues\n"
+          )
+
+          if padding_import not in text:
+              anchor = (
+                  "import androidx.compose.foundation.layout.Column\n"
+              )
+
+              if anchor not in text:
+                  raise SystemExit(
+                      "Column import not found"
+                  )
+
+              text = text.replace(
+                  anchor,
+                  anchor + padding_import,
+                  1,
+              )
 
           path.write_text(
               text,
