@@ -167,8 +167,8 @@ suspend fun listShare(surl: String, sekey: String, dir: String, cookie: String, 
                 val item = array.optJSONObject(i) ?: continue
                 val isdir = item.optString("isdir") == "1"
                 val path = item.optString("path")
-                    add(
-                        ShareFile(
+                add(
+                    ShareFile(
                             // 目录用 path 作 fid（导航传参），文件用 fs_id（转存传参）
                             fid = if (isdir) path else item.optString("fs_id"),
                             fname = item.optString("server_filename"),

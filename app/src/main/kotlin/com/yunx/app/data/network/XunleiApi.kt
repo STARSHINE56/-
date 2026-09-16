@@ -748,7 +748,13 @@ class XunleiApi(
             .header("Content-Type", "application/json")
             .header("Origin", "https://pan.xunlei.com")
             .header("Referer", "https://pan.xunlei.com/")
-            if (captchaToken.isNotBlank()) builder.header("X-Captcha-Token", captchaToken)
+
+        if (captchaToken.isNotBlank()) {
+            builder.header(
+                "X-Captcha-Token",
+                captchaToken
+            )
+        }
         return if (body != null) builder.post(body.toRequestBody(jsonMediaType)).build()
         else builder.get().build()
     }
@@ -771,7 +777,13 @@ class XunleiApi(
             .header("Content-Type", "application/json")
             .header("Origin", "https://pan.xunlei.com")
             .header("Referer", "https://pan.xunlei.com/")
-            if (captchaToken.isNotBlank()) builder.header("X-Captcha-Token", captchaToken)
+
+        if (captchaToken.isNotBlank()) {
+            builder.header(
+                "X-Captcha-Token",
+                captchaToken
+            )
+        }
         val rb = body?.toRequestBody(jsonMediaType) ?: "{}".toRequestBody(jsonMediaType)
         return when (method) {
             "PATCH" -> builder.patch(rb).build()

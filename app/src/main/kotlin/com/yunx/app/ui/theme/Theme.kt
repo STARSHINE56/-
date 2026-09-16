@@ -283,6 +283,7 @@ fun ComposeEmptyActivityTheme(
  * 基于种子色生成完整 Material3 颜色方案（浅色/深色），
  * 使用 material-color-utilities 的 Tonal Spot 方案（与 Material You 同源算法）。
  */
+@android.annotation.SuppressLint("RestrictedApi")
 @Composable
 private fun seedColorScheme(seedArgb: Long, dark: Boolean): androidx.compose.material3.ColorScheme {
     val scheme = remember(seedArgb, dark) {

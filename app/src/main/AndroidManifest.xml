@@ -53,14 +53,14 @@
 
         <!-- 崩溃界面：独立进程运行，避免主线程崩溃后无法展示 UI -->
         <activity
-            android:name=".crash.CrashActivity"
+            android:name="com.yunx.app.crash.CrashActivity"
             android:exported="false"
             android:process=":crash"
             android:theme="@style/Theme.ComposeEmptyActivity" />
 
         <!-- 下载前台服务：下载中保持前台，避免后台限速/进程被杀 -->
         <service
-            android:name=".data.download.DownloadService"
+            android:name="com.yunx.app.data.download.DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
