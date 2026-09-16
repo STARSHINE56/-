@@ -1,0 +1,877 @@
+name: Apply Third Batch Optimizations
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  YUNX_USE_MIRROR: "false"
+
+concurrency:
+  group: apply-third-batch-optimizations
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply third batch optimizations
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Apply source changes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+
+              if count != 1:
+                  raise RuntimeError(
+                      f"{label}: expected 1 match, found {count}"
+                  )
+
+              print(f"OK: {label}")
+
+              return text.replace(old, new, 1)
+
+          def replace_regex(
+              text,
+              pattern,
+              replacement,
+              label,
+              expected=1,
+              flags=0
+          ):
+              updated, count = re.subn(
+                  pattern,
+                  replacement,
+                  text,
+                  flags=flags
+              )
+
+              if count != expected:
+                  raise RuntimeError(
+                      f"{label}: expected {expected} matches, found {count}"
+                  )
+
+              print(
+                  f"OK: {label} ({count})"
+              )
+
+              return updated
+
+          # ============================================================
+          # 1. 下载页：
+          #    - 去掉两个“复制直链”菜单
+          #    - 清理对应 Clipboard import/helper
+          # ============================================================
+
+          download_screen_path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/screens/"
+              "DownloadScreen.kt"
+          )
+
+          download_screen = download_screen_path.read_text(
+              encoding="utf-8"
+          )
+
+          copy_menu_pattern = r'''
+              \s*TextButton\(
+                  onClick\s*=\s*\{
+                      \s*showMenu\s*=\s*false
+                      \s*copyToClipboard\(
+                          context,\s*task\.url
+                      \)
+                      \s*SnackbarController\.show\(
+                          "直链已复制"
+                      \)
+                  \}
+              \)\s*\{
+                  [\s\S]*?
+                  Text\(
+                      "复制直链"
+                  \)
+              \}
+          '''
+
+          download_screen = replace_regex(
+              download_screen,
+              copy_menu_pattern,
+              "",
+              "Remove direct-link copy menu",
+              expected=2,
+              flags=re.VERBOSE
+          )
+
+          for old_import in [
+              "import android.content.ClipData\n",
+              "import android.content.ClipboardManager\n",
+              "import androidx.compose.material.icons.outlined.ContentCopy\n",
+          ]:
+              if old_import in download_screen:
+                  download_screen = download_screen.replace(
+                      old_import,
+                      ""
+                  )
+
+          copy_helper_pattern = r'''
+              \nprivate\s+fun\s+copyToClipboard\(
+                  context:\s*Context,
+                  \s*text:\s*String
+              \)\s*\{
+                  [\s\S]*?
+              \}\n
+          '''
+
+          download_screen = replace_regex(
+              download_screen,
+              copy_helper_pattern,
+              "\n",
+              "Remove clipboard helper",
+              expected=1,
+              flags=re.VERBOSE
+          )
+
+          download_screen = download_screen.replace(
+              "（复制直链 / 重新下载 / 删除）",
+              "（重新下载 / 删除）"
+          )
+
+          download_screen_path.write_text(
+              download_screen,
+              encoding="utf-8"
+          )
+
+          # ============================================================
+          # 2. 下载提示：
+          #    “直链已过期”改成用户更容易理解的说法
+          # ============================================================
+
+          download_vm_path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/viewmodel/"
+              "DownloadViewModel.kt"
+          )
+
+          download_vm = download_vm_path.read_text(
+              encoding="utf-8"
+          )
+
+          download_vm = download_vm.replace(
+              "重新下载：校验直链有效性后新建任务（直链过期时提示）",
+              "重新下载：校验下载链接有效性后新建任务（链接失效时提示）"
+          )
+
+          download_vm = replace_once(
+              download_vm,
+              'SnackbarController.show(if (ok) "已重新加入下载" else "直链已过期，请重新获取下载链接")',
+              'SnackbarController.show(if (ok) "已重新加入下载" else "下载链接已失效，请重新解析后下载")',
+              "Improve expired download message"
+          )
+
+          download_vm_path.write_text(
+              download_vm,
+              encoding="utf-8"
+          )
+
+          # ============================================================
+          # 3. 账号状态判断：
+          #    SUSPECT 之外增加 NETWORK_ERROR
+          #
+          #    IOException -> 网络检测失败
+          #    其他 API/认证类异常 -> 登录可能已失效
+          #
+          #    不会自动删除账号。
+          # ============================================================
+
+          quota_path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/viewmodel/"
+              "DriveQuotaViewModel.kt"
+          )
+
+          quota = quota_path.read_text(
+              encoding="utf-8"
+          )
+
+          quota = replace_once(
+              quota,
+              "import kotlinx.coroutines.launch\n",
+              "import kotlinx.coroutines.launch\n"
+              "import java.io.IOException\n",
+              "Import IOException"
+          )
+
+          quota = replace_once(
+              quota,
+              '''enum class DriveLoginState {
+              LOGGED_OUT,
+              CHECKING,
+              HEALTHY,
+              SUSPECT
+          }''',
+              '''enum class DriveLoginState {
+              LOGGED_OUT,
+              CHECKING,
+              HEALTHY,
+              NETWORK_ERROR,
+              SUSPECT
+          }''',
+              "Add NETWORK_ERROR state"
+          )
+
+          # 六个平台的 onFailure 改为拿到 error
+          quota = replace_regex(
+              quota,
+              r'\.onFailure\s*\{',
+              '.onFailure { error ->',
+              "Capture account check errors",
+              expected=6
+          )
+
+          # 六处 SUSPECT 改为统一分类
+          quota = replace_regex(
+              quota,
+              r'DriveLoginState\.SUSPECT',
+              'classifyLoginFailure(error)',
+              "Classify account failures",
+              expected=6
+          )
+
+          factory_marker = "\n    class Factory(\n"
+
+          classifier = '''
+              private fun classifyLoginFailure(
+                  error: Throwable
+              ): DriveLoginState =
+                  if (
+                      error is IOException ||
+                      error.cause is IOException
+                  ) {
+                      DriveLoginState.NETWORK_ERROR
+                  } else {
+                      DriveLoginState.SUSPECT
+                  }
+
+          '''
+
+          quota = replace_once(
+              quota,
+              factory_marker,
+              classifier + factory_marker,
+              "Add login failure classifier"
+          )
+
+          quota = quota.replace(
+              "SUSPECT 表示接口检测失败。",
+              "NETWORK_ERROR 表示网络访问失败；SUSPECT 表示接口或认证检测失败。"
+          )
+
+          quota_path.write_text(
+              quota,
+              encoding="utf-8"
+          )
+
+          # ============================================================
+          # 4. DriveScreen：
+          #    显示“网络检测失败”
+          # ============================================================
+
+          drive_path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/screens/"
+              "DriveScreen.kt"
+          )
+
+          drive = drive_path.read_text(
+              encoding="utf-8"
+          )
+
+          drive = replace_once(
+              drive,
+              '''                        DriveLoginState.SUSPECT ->
+                              "● 登录可能已失效"
+
+                          DriveLoginState.LOGGED_OUT ->
+                              "● 未登录"''',
+              '''                        DriveLoginState.NETWORK_ERROR ->
+                              "● 网络检测失败"
+
+                          DriveLoginState.SUSPECT ->
+                              "● 登录可能已失效"
+
+                          DriveLoginState.LOGGED_OUT ->
+                              "● 未登录"''',
+              "Add network error text"
+          )
+
+          drive = replace_once(
+              drive,
+              '''                            DriveLoginState.SUSPECT ->
+                                  MaterialTheme
+                                      .colorScheme
+                                      .error
+
+                              else ->''',
+              '''                            DriveLoginState.SUSPECT ->
+                                  MaterialTheme
+                                      .colorScheme
+                                      .error
+
+                              DriveLoginState.NETWORK_ERROR ->
+                                  MaterialTheme
+                                      .colorScheme
+                                      .tertiary
+
+                              else ->''',
+              "Add network error color"
+          )
+
+          drive_path.write_text(
+              drive,
+              encoding="utf-8"
+          )
+
+          # ============================================================
+          # 5. 解析历史轻量优化：
+          #    最近三条记录显示相对时间
+          # ============================================================
+
+          resolve_path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/screens/"
+              "ResolveScreen.kt"
+          )
+
+          resolve = resolve_path.read_text(
+              encoding="utf-8"
+          )
+
+          history_marker = '''/**
+           * 最近解析单条卡片
+           */
+          @Composable
+          private fun HistoryCard(
+          '''
+
+          time_helper = '''/**
+           * 将解析时间显示为简短的相对时间。
+           */
+          private fun formatHistoryTime(
+              timestamp: Long,
+              now: Long = System.currentTimeMillis()
+          ): String {
+              if (timestamp <= 0L) {
+                  return ""
+              }
+
+              val diff =
+                  (now - timestamp)
+                      .coerceAtLeast(0L)
+
+              val minute =
+                  60_000L
+
+              val hour =
+                  60L * minute
+
+              val day =
+                  24L * hour
+
+              return when {
+                  diff < minute ->
+                      "刚刚"
+
+                  diff < hour ->
+                      "${diff / minute} 分钟前"
+
+                  diff < day ->
+                      "${diff / hour} 小时前"
+
+                  diff < 2L * day ->
+                      "昨天"
+
+                  diff < 7L * day ->
+                      "${diff / day} 天前"
+
+                  else ->
+                      "较早"
+              }
+          }
+
+          /**
+           * 最近解析单条卡片
+           */
+          @Composable
+          private fun HistoryCard(
+          '''
+
+          resolve = replace_once(
+              resolve,
+              history_marker,
+              time_helper,
+              "Add relative history time helper"
+          )
+
+          history_link_block = '''                Text(
+                      text =
+                          item.link,
+
+                      style =
+                          MaterialTheme
+                              .typography
+                              .bodySmall,
+
+                      color =
+                          MaterialTheme
+                              .colorScheme
+                              .onSurfaceVariant,
+
+                      maxLines = 1,
+
+                      overflow =
+                          TextOverflow.Ellipsis
+                  )
+          '''
+
+          history_link_with_time = history_link_block + '''
+                  val historyTime =
+                      formatHistoryTime(
+                          item.timestamp
+                      )
+
+                  if (historyTime.isNotBlank()) {
+                      Text(
+                          text =
+                              historyTime,
+
+                          style =
+                              MaterialTheme
+                                  .typography
+                                  .labelSmall,
+
+                          color =
+                              MaterialTheme
+                                  .colorScheme
+                                  .onSurfaceVariant
+                      )
+                  }
+          '''
+
+          resolve = replace_once(
+              resolve,
+              history_link_block,
+              history_link_with_time,
+              "Show time in recent history card"
+          )
+
+          resolve_path.write_text(
+              resolve,
+              encoding="utf-8"
+          )
+
+          # ============================================================
+          # 6. Test Build APK 增加 lintDebug
+          # ============================================================
+
+          test_workflow_path = Path(
+              ".github/workflows/test-build.yml"
+          )
+
+          test_workflow = test_workflow_path.read_text(
+              encoding="utf-8"
+          )
+
+          build_step_marker = '''      - name: Build debug APK
+                  shell: bash
+                  run: |
+                    ./gradlew \\
+                      --no-daemon \\
+                      --console=plain \\
+                      -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \\
+                      assembleDebug
+          '''
+
+          lint_and_build = '''      - name: Run Android lint
+                  shell: bash
+                  run: |
+                    ./gradlew \\
+                      --no-daemon \\
+                      --console=plain \\
+                      -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \\
+                      lintDebug
+
+                - name: Build debug APK
+                  shell: bash
+                  run: |
+                    ./gradlew \\
+                      --no-daemon \\
+                      --console=plain \\
+                      -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \\
+                      assembleDebug
+          '''
+
+          test_workflow = replace_once(
+              test_workflow,
+              build_step_marker,
+              lint_and_build,
+              "Add lintDebug to Test Build APK"
+          )
+
+          test_workflow_path.write_text(
+              test_workflow,
+              encoding="utf-8"
+          )
+
+          # ============================================================
+          # 7. 清理旧文案 / 注释
+          #
+          #    不修改 C139 类名、变量名、API 名等内部标识符。
+          # ============================================================
+
+          text_extensions = {
+              ".kt",
+              ".xml",
+              ".md",
+          }
+
+          roots = [
+              Path("app/src"),
+              Path("README.md"),
+              Path("NOTICE"),
+              Path("NOTICE.md"),
+          ]
+
+          replacements = {
+              "139 网盘": "移动云盘",
+              "139网盘": "移动云盘",
+              "139 云盘": "移动云盘",
+              "139云盘": "移动云盘",
+              "移动云盘云盘": "移动云盘",
+              '"UC网盘"': '"UC 网盘"',
+              '"123云盘"': '"123 云盘"',
+          }
+
+          changed_cleanup = []
+
+          files = []
+
+          for root in roots:
+              if root.is_file():
+                  files.append(root)
+
+              elif root.is_dir():
+                  files.extend(
+                      p
+                      for p in root.rglob("*")
+                      if (
+                          p.is_file() and
+                          p.suffix in text_extensions
+                      )
+                  )
+
+          for path in files:
+              text = path.read_text(
+                  encoding="utf-8",
+                  errors="ignore"
+              )
+
+              updated = text
+
+              for old, new in replacements.items():
+                  updated = updated.replace(
+                      old,
+                      new
+                  )
+
+              if updated != text:
+                  path.write_text(
+                      updated,
+                      encoding="utf-8"
+                  )
+
+                  changed_cleanup.append(
+                      str(path)
+                  )
+
+          print(
+              "Cleanup changed:",
+              len(changed_cleanup),
+              "files"
+          )
+
+          # ============================================================
+          # 8. 自检
+          # ============================================================
+
+          download_screen_check = (
+              download_screen_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          if "复制直链" in download_screen_check:
+              raise RuntimeError(
+                  "DownloadScreen still contains 复制直链"
+              )
+
+          if "ContentCopy" in download_screen_check:
+              raise RuntimeError(
+                  "DownloadScreen still contains ContentCopy"
+              )
+
+          download_vm_check = (
+              download_vm_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          if "下载链接已失效，请重新解析后下载" not in download_vm_check:
+              raise RuntimeError(
+                  "New download expiry message missing"
+              )
+
+          quota_check = quota_path.read_text(
+              encoding="utf-8"
+          )
+
+          if "NETWORK_ERROR" not in quota_check:
+              raise RuntimeError(
+                  "NETWORK_ERROR state missing"
+              )
+
+          if "classifyLoginFailure" not in quota_check:
+              raise RuntimeError(
+                  "Account failure classifier missing"
+              )
+
+          drive_check = drive_path.read_text(
+              encoding="utf-8"
+          )
+
+          if "● 网络检测失败" not in drive_check:
+              raise RuntimeError(
+                  "Network error UI missing"
+              )
+
+          resolve_check = resolve_path.read_text(
+              encoding="utf-8"
+          )
+
+          if "formatHistoryTime" not in resolve_check:
+              raise RuntimeError(
+                  "History time helper missing"
+              )
+
+          test_workflow_check = (
+              test_workflow_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          if "lintDebug" not in test_workflow_check:
+              raise RuntimeError(
+                  "lintDebug missing from Test Build APK"
+              )
+
+          print(
+              "Third-batch source changes applied successfully."
+          )
+          PY
+
+      - name: Clean whitespace and show changed files
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          targets = [
+              Path(
+                  "app/src/main/kotlin/com/yunx/app/ui/screens/"
+                  "DownloadScreen.kt"
+              ),
+              Path(
+                  "app/src/main/kotlin/com/yunx/app/ui/viewmodel/"
+                  "DownloadViewModel.kt"
+              ),
+              Path(
+                  "app/src/main/kotlin/com/yunx/app/ui/viewmodel/"
+                  "DriveQuotaViewModel.kt"
+              ),
+              Path(
+                  "app/src/main/kotlin/com/yunx/app/ui/screens/"
+                  "DriveScreen.kt"
+              ),
+              Path(
+                  "app/src/main/kotlin/com/yunx/app/ui/screens/"
+                  "ResolveScreen.kt"
+              ),
+              Path(
+                  ".github/workflows/test-build.yml"
+              ),
+          ]
+
+          for path in targets:
+              if not path.exists():
+                  continue
+
+              text = path.read_text(
+                  encoding="utf-8"
+              )
+
+              cleaned = "\n".join(
+                  line.rstrip()
+                  for line in text.splitlines()
+              )
+
+              if text.endswith("\n"):
+                  cleaned += "\n"
+
+              path.write_text(
+                  cleaned,
+                  encoding="utf-8"
+              )
+          PY
+
+          git status --short
+
+          echo
+          echo "----- DIFF STAT -----"
+          git diff --stat
+
+          echo
+          echo "----- DIFF CHECK -----"
+          git diff --check
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          test -x "$SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0"
+
+      - name: Configure debug build
+        shell: bash
+        run: |
+          sed -i \
+            '/aapt2FromMavenOverride/d' \
+            gradle.properties
+
+          printf \
+            'sdk.dir=%s\n' \
+            "$ANDROID_HOME" \
+            > local.properties
+
+          chmod +x gradlew
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            testDebugUnitTest
+
+      - name: Run Android lint
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            lintDebug
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            assembleDebug
+
+      - name: Verify debug APK
+        shell: bash
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          test -f "$APK"
+
+          ls -lh "$APK"
+
+      - name: Final source checks
+        shell: bash
+        run: |
+          if grep -RIn \
+            --include='*.kt' \
+            --include='*.xml' \
+            -E '复制直链|直链已复制' \
+            app/src
+          then
+            echo "Old direct-link copy UI still exists."
+            exit 1
+          fi
+
+          if grep -RIn \
+            --include='*.kt' \
+            --include='*.xml' \
+            -E '139 网盘|139网盘|139 云盘|139云盘' \
+            app/src
+          then
+            echo "Old Mobile Cloud wording still exists."
+            exit 1
+          fi
+
+          echo "Final checks passed."
+
+      - name: Remove temporary workflow
+        shell: bash
+        run: |
+          rm -f \
+            .github/workflows/apply-third-batch.yml
+
+      - name: Commit verified changes
+        shell: bash
+        run: |
+          git config \
+            user.name \
+            "github-actions[bot]"
+
+          git config \
+            user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit \
+            -m "feat: improve stability and polish app experience"
+
+          git push \
+            origin \
+            HEAD:main
