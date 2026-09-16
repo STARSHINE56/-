@@ -34,6 +34,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -826,13 +827,13 @@ private fun ResolveInputContent(
                     rememberScrollState()
                 )
                 .padding(
-                    horizontal = 16.dp,
-                    vertical = 14.dp
+                    horizontal = 18.dp,
+                    vertical = 12.dp
                 ),
 
         verticalArrangement =
             Arrangement.spacedBy(
-                20.dp
+                18.dp
             )
     ) {
 
@@ -846,7 +847,7 @@ private fun ResolveInputContent(
 
             shape =
                 RoundedCornerShape(
-                    28.dp
+                    24.dp
                 ),
 
             colors =
@@ -866,14 +867,14 @@ private fun ResolveInputContent(
             Column(
                 modifier =
                     Modifier.padding(
-                        horizontal = 18.dp,
-                        vertical = 20.dp
+                        horizontal = 16.dp,
+                        vertical = 16.dp
                     ),
 
                 verticalArrangement =
                     Arrangement.spacedBy(
-                        16.dp
-                    )
+                    13.dp
+                )
             ) {
 
                 // ------------------------------------------
@@ -981,8 +982,8 @@ private fun ResolveInputContent(
                             Modifier
                                 .fillMaxWidth()
                                 .heightIn(
-                                    min = 160.dp
-                                ),
+                                min = 145.dp
+                            ),
 
                         placeholder = {
                             Text(
@@ -1020,69 +1021,61 @@ private fun ResolveInputContent(
                             }
                         },
 
-                        minLines = 5,
-                        maxLines = 7,
+                        minLines = 4,
+                        maxLines = 6,
 
                         shape =
                             RoundedCornerShape(
                                 22.dp
                             )
-                    )
-                }
+                        )
 
-                // ------------------------------------------
-                // 粘贴按钮
-                // ------------------------------------------
-
-                Row(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.End,
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-                    FilledTonalButton(
-                        onClick =
-                            onPasteClipboard,
-
-                        shape =
-                            RoundedCornerShape(
-                                18.dp
+                        FilledTonalButton(
+                            onClick = onPasteClipboard,
+                            modifier =
+                                Modifier
+                                    .align(
+                                        Alignment.BottomEnd
+                                    )
+                                    .padding(
+                                        end = 10.dp,
+                                        bottom = 10.dp
+                                    )
+                                    .height(36.dp),
+                            shape =
+                                RoundedCornerShape(
+                                    12.dp
+                                ),
+                            contentPadding =
+                                PaddingValues(
+                                    horizontal = 10.dp,
+                                    vertical = 0.dp
+                                )
+                        ) {
+                            Icon(
+                                imageVector =
+                                    Icons.Outlined.ContentPaste,
+                                contentDescription = null,
+                                modifier =
+                                    Modifier.size(15.dp)
                             )
-                    ) {
-                        Icon(
-                            imageVector =
-                                Icons.Outlined.ContentPaste,
 
-                            contentDescription =
-                                null,
+                            Spacer(
+                                modifier =
+                                    Modifier.width(4.dp)
+                            )
 
-                            modifier =
-                                Modifier.size(
-                                    18.dp
-                                )
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.width(
-                                    6.dp
-                                )
-                        )
-
-                        Text(
-                            text =
-                                "粘贴",
-
-                            fontWeight =
-                                FontWeight.Medium
-                        )
+                            Text(
+                                text = "粘贴",
+                                style =
+                                    MaterialTheme
+                                        .typography
+                                        .labelMedium,
+                                fontWeight =
+                                    FontWeight.Medium
+                            )
+                        }
                     }
-                }
-
                 // ------------------------------------------
                 // 提取码
                 // ------------------------------------------
@@ -1142,8 +1135,8 @@ private fun ResolveInputContent(
 
                     shape =
                         RoundedCornerShape(
-                            20.dp
-                        )
+                        16.dp
+                    )
                 )
 
                 // ------------------------------------------
@@ -1164,8 +1157,8 @@ private fun ResolveInputContent(
                         Modifier
                             .fillMaxWidth()
                             .height(
-                                58.dp
-                            ),
+                            54.dp
+                        ),
 
                     enabled =
                         link.isNotBlank() &&
@@ -1220,23 +1213,6 @@ private fun ResolveInputContent(
 
                             fontWeight =
                                 FontWeight.SemiBold
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.width(
-                                    8.dp
-                                )
-                        )
-
-                        Text(
-                            text =
-                                "→",
-
-                            style =
-                                MaterialTheme
-                                    .typography
-                                    .titleLarge
                         )
                     }
                 }
@@ -1425,31 +1401,6 @@ private fun ResolveInputContent(
                         onHistorySelect
                 )
             }
-        } else {
-
-            // 没有历史时保持干净，不再展示支持平台卡片
-            Text(
-                text =
-                    "解析过的分享链接会显示在这里",
-
-                style =
-                    MaterialTheme
-                        .typography
-                        .bodySmall,
-
-                color =
-                    MaterialTheme
-                        .colorScheme
-                        .onSurfaceVariant,
-
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = 4.dp,
-                            vertical = 2.dp
-                        )
-            )
         }
 
         Spacer(
