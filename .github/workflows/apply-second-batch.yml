@@ -1,0 +1,1445 @@
+name: Apply Second Batch Optimizations
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  YUNX_USE_MIRROR: "false"
+
+concurrency:
+  group: apply-second-batch-optimizations
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply account health and history management
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Apply source changes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              path = Path(path)
+              text = path.read_text(encoding="utf-8")
+
+              count = text.count(old)
+
+              if count != 1:
+                  raise RuntimeError(
+                      f"{label}: expected 1 match, found {count}"
+                  )
+
+              path.write_text(
+                  text.replace(old, new, 1),
+                  encoding="utf-8"
+              )
+
+              print(f"OK: {label}")
+
+          # ============================================================
+          # 1. 解析历史：上限 30 + 单条删除
+          # ============================================================
+
+          history_path = Path(
+              "app/src/main/kotlin/com/yunx/app/data/prefs/"
+              "ResolveHistoryRepository.kt"
+          )
+
+          history = history_path.read_text(
+              encoding="utf-8"
+          )
+
+          old_clear = '''    fun clear() {
+                  prefs
+                      .edit()
+                      .remove(KEY_HISTORY)
+                      .apply()
+              }
+
+              private fun save(
+          '''
+
+          new_clear = '''    fun remove(
+                  item: ResolveHistoryItem
+              ): List<ResolveHistoryItem> {
+                  val updated = load().filterNot {
+                      it.platformName == item.platformName &&
+                          it.shareId == item.shareId
+                  }
+
+                  save(updated)
+
+                  return updated
+              }
+
+              fun clear() {
+                  prefs
+                      .edit()
+                      .remove(KEY_HISTORY)
+                      .apply()
+              }
+
+              private fun save(
+          '''
+
+          if history.count(old_clear) != 1:
+              raise RuntimeError(
+                  "ResolveHistoryRepository remove insertion point not found"
+              )
+
+          history = history.replace(
+              old_clear,
+              new_clear,
+              1
+          )
+
+          if "const val MAX_HISTORY =\n            10" not in history:
+              raise RuntimeError(
+                  "ResolveHistoryRepository MAX_HISTORY=10 not found"
+              )
+
+          history = history.replace(
+              "const val MAX_HISTORY =\n            10",
+              "const val MAX_HISTORY =\n            30",
+              1
+          )
+
+          history_path.write_text(
+              history,
+              encoding="utf-8"
+          )
+
+          # ============================================================
+          # 2. DriveQuotaViewModel：
+          #    添加真实账号健康状态
+          # ============================================================
+
+          quota_path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/viewmodel/"
+              "DriveQuotaViewModel.kt"
+          )
+
+          quota_path.write_text(
+          '''package com.yunx.app.ui.viewmodel
+
+          import androidx.lifecycle.ViewModel
+          import androidx.lifecycle.ViewModelProvider
+          import androidx.lifecycle.viewModelScope
+          import com.yunx.app.data.network.BaiduApi
+          import com.yunx.app.data.network.C139Api
+          import com.yunx.app.data.network.Pan123Api
+          import com.yunx.app.data.network.QuarkApi
+          import com.yunx.app.data.network.UCApi
+          import com.yunx.app.data.network.XunleiApi
+          import com.yunx.app.data.network.model.QuotaInfo
+          import kotlinx.coroutines.coroutineScope
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.flow.asStateFlow
+          import kotlinx.coroutines.launch
+
+          /**
+           * 已保存凭证的健康状态。
+           *
+           * SUSPECT 只表示接口检测失败，可能是凭证失效，
+           * 也可能是临时网络/API 异常，因此不会自动退出账号。
+           */
+          enum class DriveLoginState {
+              LOGGED_OUT,
+              CHECKING,
+              HEALTHY,
+              SUSPECT
+          }
+
+          class DriveQuotaViewModel(
+              private val quarkApi: QuarkApi,
+              private val quarkCookie: suspend () -> String?,
+              private val ucApi: UCApi,
+              private val ucCookie: suspend () -> String?,
+              private val xunleiApi: XunleiApi,
+              private val xunleiToken: suspend () -> String?,
+              private val xunleiDeviceId: suspend () -> String?,
+              private val xunleiCaptcha: suspend () -> String?,
+              private val baiduApi: BaiduApi,
+              private val baiduCookie: suspend () -> String?,
+              private val c139Api: C139Api,
+              private val c139Cookie: suspend () -> String?,
+              private val pan123Api: Pan123Api,
+              private val pan123Token: suspend () -> String?
+          ) : ViewModel() {
+
+              private val _quarkQuota =
+                  MutableStateFlow<QuotaInfo?>(null)
+              val quarkQuota: StateFlow<QuotaInfo?> =
+                  _quarkQuota.asStateFlow()
+
+              private val _ucQuota =
+                  MutableStateFlow<QuotaInfo?>(null)
+              val ucQuota: StateFlow<QuotaInfo?> =
+                  _ucQuota.asStateFlow()
+
+              private val _xunleiQuota =
+                  MutableStateFlow<QuotaInfo?>(null)
+              val xunleiQuota: StateFlow<QuotaInfo?> =
+                  _xunleiQuota.asStateFlow()
+
+              private val _baiduQuota =
+                  MutableStateFlow<QuotaInfo?>(null)
+              val baiduQuota: StateFlow<QuotaInfo?> =
+                  _baiduQuota.asStateFlow()
+
+              private val _c139Quota =
+                  MutableStateFlow<QuotaInfo?>(null)
+              val c139Quota: StateFlow<QuotaInfo?> =
+                  _c139Quota.asStateFlow()
+
+              private val _pan123Quota =
+                  MutableStateFlow<QuotaInfo?>(null)
+              val pan123Quota: StateFlow<QuotaInfo?> =
+                  _pan123Quota.asStateFlow()
+
+              private val _quarkLoginState =
+                  MutableStateFlow(
+                      DriveLoginState.LOGGED_OUT
+                  )
+              val quarkLoginState =
+                  _quarkLoginState.asStateFlow()
+
+              private val _ucLoginState =
+                  MutableStateFlow(
+                      DriveLoginState.LOGGED_OUT
+                  )
+              val ucLoginState =
+                  _ucLoginState.asStateFlow()
+
+              private val _xunleiLoginState =
+                  MutableStateFlow(
+                      DriveLoginState.LOGGED_OUT
+                  )
+              val xunleiLoginState =
+                  _xunleiLoginState.asStateFlow()
+
+              private val _baiduLoginState =
+                  MutableStateFlow(
+                      DriveLoginState.LOGGED_OUT
+                  )
+              val baiduLoginState =
+                  _baiduLoginState.asStateFlow()
+
+              private val _c139LoginState =
+                  MutableStateFlow(
+                      DriveLoginState.LOGGED_OUT
+                  )
+              val c139LoginState =
+                  _c139LoginState.asStateFlow()
+
+              private val _pan123LoginState =
+                  MutableStateFlow(
+                      DriveLoginState.LOGGED_OUT
+                  )
+              val pan123LoginState =
+                  _pan123LoginState.asStateFlow()
+
+              val loading =
+                  MutableStateFlow(false)
+
+              fun loadAll() {
+                  if (loading.value) return
+
+                  loading.value = true
+
+                  viewModelScope.launch {
+                      try {
+                          coroutineScope {
+                              launch {
+                                  val credential =
+                                      quarkCookie()
+
+                                  if (credential.isNullOrBlank()) {
+                                      _quarkQuota.value = null
+                                      _quarkLoginState.value =
+                                          DriveLoginState.LOGGED_OUT
+                                  } else {
+                                      _quarkLoginState.value =
+                                          DriveLoginState.CHECKING
+
+                                      runCatching {
+                                          quarkApi.getQuota(
+                                              credential
+                                          )
+                                      }.onSuccess {
+                                          _quarkQuota.value = it
+                                          _quarkLoginState.value =
+                                              DriveLoginState.HEALTHY
+                                      }.onFailure {
+                                          _quarkQuota.value = null
+                                          _quarkLoginState.value =
+                                              DriveLoginState.SUSPECT
+                                      }
+                                  }
+                              }
+
+                              launch {
+                                  val credential =
+                                      ucCookie()
+
+                                  if (credential.isNullOrBlank()) {
+                                      _ucQuota.value = null
+                                      _ucLoginState.value =
+                                          DriveLoginState.LOGGED_OUT
+                                  } else {
+                                      _ucLoginState.value =
+                                          DriveLoginState.CHECKING
+
+                                      runCatching {
+                                          ucApi.getQuota(
+                                              credential
+                                          )
+                                      }.onSuccess {
+                                          _ucQuota.value = it
+                                          _ucLoginState.value =
+                                              DriveLoginState.HEALTHY
+                                      }.onFailure {
+                                          _ucQuota.value = null
+                                          _ucLoginState.value =
+                                              DriveLoginState.SUSPECT
+                                      }
+                                  }
+                              }
+
+                              launch {
+                                  val token =
+                                      xunleiToken()
+
+                                  if (token.isNullOrBlank()) {
+                                      _xunleiQuota.value = null
+                                      _xunleiLoginState.value =
+                                          DriveLoginState.LOGGED_OUT
+                                  } else {
+                                      _xunleiLoginState.value =
+                                          DriveLoginState.CHECKING
+
+                                      val deviceId =
+                                          xunleiDeviceId()
+                                              .orEmpty()
+
+                                      val captcha =
+                                          xunleiCaptcha()
+                                              .orEmpty()
+
+                                      runCatching {
+                                          xunleiApi.getQuota(
+                                              token,
+                                              deviceId,
+                                              captcha
+                                          )
+                                      }.onSuccess {
+                                          _xunleiQuota.value = it
+                                          _xunleiLoginState.value =
+                                              DriveLoginState.HEALTHY
+                                      }.onFailure {
+                                          _xunleiQuota.value = null
+                                          _xunleiLoginState.value =
+                                              DriveLoginState.SUSPECT
+                                      }
+                                  }
+                              }
+
+                              launch {
+                                  val credential =
+                                      baiduCookie()
+
+                                  if (credential.isNullOrBlank()) {
+                                      _baiduQuota.value = null
+                                      _baiduLoginState.value =
+                                          DriveLoginState.LOGGED_OUT
+                                  } else {
+                                      _baiduLoginState.value =
+                                          DriveLoginState.CHECKING
+
+                                      runCatching {
+                                          baiduApi.getQuota(
+                                              credential
+                                          )
+                                      }.onSuccess {
+                                          _baiduQuota.value = it
+                                          _baiduLoginState.value =
+                                              DriveLoginState.HEALTHY
+                                      }.onFailure {
+                                          _baiduQuota.value = null
+                                          _baiduLoginState.value =
+                                              DriveLoginState.SUSPECT
+                                      }
+                                  }
+                              }
+
+                              launch {
+                                  val credential =
+                                      c139Cookie()
+
+                                  if (credential.isNullOrBlank()) {
+                                      _c139Quota.value = null
+                                      _c139LoginState.value =
+                                          DriveLoginState.LOGGED_OUT
+                                  } else {
+                                      _c139LoginState.value =
+                                          DriveLoginState.CHECKING
+
+                                      runCatching {
+                                          c139Api.getQuota(
+                                              credential
+                                          )
+                                      }.onSuccess {
+                                          _c139Quota.value = it
+                                          _c139LoginState.value =
+                                              DriveLoginState.HEALTHY
+                                      }.onFailure {
+                                          _c139Quota.value = null
+                                          _c139LoginState.value =
+                                              DriveLoginState.SUSPECT
+                                      }
+                                  }
+                              }
+
+                              launch {
+                                  val token =
+                                      pan123Token()
+
+                                  if (token.isNullOrBlank()) {
+                                      _pan123Quota.value = null
+                                      _pan123LoginState.value =
+                                          DriveLoginState.LOGGED_OUT
+                                  } else {
+                                      _pan123LoginState.value =
+                                          DriveLoginState.CHECKING
+
+                                      runCatching {
+                                          pan123Api.getQuota(
+                                              token
+                                          )
+                                      }.onSuccess {
+                                          _pan123Quota.value = it
+                                          _pan123LoginState.value =
+                                              DriveLoginState.HEALTHY
+                                      }.onFailure {
+                                          _pan123Quota.value = null
+                                          _pan123LoginState.value =
+                                              DriveLoginState.SUSPECT
+                                      }
+                                  }
+                              }
+                          }
+                      } finally {
+                          loading.value = false
+                      }
+                  }
+              }
+
+              class Factory(
+                  private val quarkApi: QuarkApi,
+                  private val quarkCookie:
+                      suspend () -> String?,
+                  private val ucApi: UCApi,
+                  private val ucCookie:
+                      suspend () -> String?,
+                  private val xunleiApi: XunleiApi,
+                  private val xunleiToken:
+                      suspend () -> String?,
+                  private val xunleiDeviceId:
+                      suspend () -> String?,
+                  private val xunleiCaptcha:
+                      suspend () -> String?,
+                  private val baiduApi: BaiduApi,
+                  private val baiduCookie:
+                      suspend () -> String?,
+                  private val c139Api: C139Api,
+                  private val c139Cookie:
+                      suspend () -> String?,
+                  private val pan123Api: Pan123Api,
+                  private val pan123Token:
+                      suspend () -> String?
+              ) : ViewModelProvider.Factory {
+
+                  @Suppress("UNCHECKED_CAST")
+                  override fun <T : ViewModel> create(
+                      modelClass: Class<T>
+                  ): T =
+                      DriveQuotaViewModel(
+                          quarkApi,
+                          quarkCookie,
+                          ucApi,
+                          ucCookie,
+                          xunleiApi,
+                          xunleiToken,
+                          xunleiDeviceId,
+                          xunleiCaptcha,
+                          baiduApi,
+                          baiduCookie,
+                          c139Api,
+                          c139Cookie,
+                          pan123Api,
+                          pan123Token
+                      ) as T
+              }
+          }
+          '''.replace("\n          ", "\n").lstrip(),
+              encoding="utf-8"
+          )
+
+          # ============================================================
+          # 3. DriveScreen：
+          #    为六个平台显示健康状态
+          # ============================================================
+
+          drive_path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/screens/"
+              "DriveScreen.kt"
+          )
+
+          drive = drive_path.read_text(
+              encoding="utf-8"
+          )
+
+          old_import = '''import com.yunx.app.ui.viewmodel.DriveQuotaViewModel
+          '''
+
+          new_import = '''import com.yunx.app.ui.viewmodel.DriveLoginState
+          import com.yunx.app.ui.viewmodel.DriveQuotaViewModel
+          '''
+
+          if drive.count(old_import) != 1:
+              raise RuntimeError(
+                  "DriveScreen DriveQuotaViewModel import not found"
+              )
+
+          drive = drive.replace(
+              old_import,
+              new_import,
+              1
+          )
+
+          # 在刷新状态后收集六个平台健康状态
+          old_refresh = '''    val isRefreshing by driveQuotaViewModel.loading.collectAsState()
+
+              // 账号列表 ↔ 夸克云盘 ↔ UC 云盘 ↔ 迅雷云盘 ↔ 百度云盘 ↔ 移动云盘 ↔ 123 云盘：平滑过渡（淡入 + 轻微缩放，不僵硬）
+          '''
+
+          new_refresh = '''    val isRefreshing by driveQuotaViewModel.loading.collectAsState()
+
+              val quarkLoginState by
+                  driveQuotaViewModel.quarkLoginState.collectAsState()
+              val ucLoginState by
+                  driveQuotaViewModel.ucLoginState.collectAsState()
+              val xunleiLoginState by
+                  driveQuotaViewModel.xunleiLoginState.collectAsState()
+              val baiduLoginState by
+                  driveQuotaViewModel.baiduLoginState.collectAsState()
+              val c139LoginState by
+                  driveQuotaViewModel.c139LoginState.collectAsState()
+              val pan123LoginState by
+                  driveQuotaViewModel.pan123LoginState.collectAsState()
+
+              // 账号列表 ↔ 夸克云盘 ↔ UC 云盘 ↔ 迅雷云盘 ↔ 百度云盘 ↔ 移动云盘 ↔ 123 云盘：平滑过渡（淡入 + 轻微缩放，不僵硬）
+          '''
+
+          if drive.count(old_refresh) != 1:
+              raise RuntimeError(
+                  "DriveScreen refresh-state insertion point not found"
+              )
+
+          drive = drive.replace(
+              old_refresh,
+              new_refresh,
+              1
+          )
+
+          # 给六张卡片注入 loginState
+          mappings = (
+              (
+                  "quota = driveQuotaViewModel.quarkQuota.collectAsState().value,",
+                  "quota = driveQuotaViewModel.quarkQuota.collectAsState().value,\n"
+                  "                        loginState = quarkLoginState,"
+              ),
+              (
+                  "quota = driveQuotaViewModel.ucQuota.collectAsState().value,",
+                  "quota = driveQuotaViewModel.ucQuota.collectAsState().value,\n"
+                  "                        loginState = ucLoginState,"
+              ),
+              (
+                  "quota = driveQuotaViewModel.xunleiQuota.collectAsState().value,",
+                  "quota = driveQuotaViewModel.xunleiQuota.collectAsState().value,\n"
+                  "                        loginState = xunleiLoginState,"
+              ),
+              (
+                  "quota = driveQuotaViewModel.baiduQuota.collectAsState().value,",
+                  "quota = driveQuotaViewModel.baiduQuota.collectAsState().value,\n"
+                  "                        loginState = baiduLoginState,"
+              ),
+              (
+                  "quota = driveQuotaViewModel.c139Quota.collectAsState().value,",
+                  "quota = driveQuotaViewModel.c139Quota.collectAsState().value,\n"
+                  "                        loginState = c139LoginState,"
+              ),
+              (
+                  "quota = driveQuotaViewModel.pan123Quota.collectAsState().value,",
+                  "quota = driveQuotaViewModel.pan123Quota.collectAsState().value,\n"
+                  "                        loginState = pan123LoginState,"
+              ),
+          )
+
+          for old, new in mappings:
+              if drive.count(old) != 1:
+                  raise RuntimeError(
+                      f"DriveScreen card mapping not found: {old}"
+                  )
+
+              drive = drive.replace(
+                  old,
+                  new,
+                  1
+              )
+
+          # 扩展 DriveAccountCard 参数
+          old_card_sig = '''private fun DriveAccountCard(
+              account: DriveAccount,
+              /** 网盘空间详情（已登录且有数据时在卡片内显示进度条）；null 不显示 */
+              quota: QuotaInfo? = null,
+              onClick: (() -> Unit)? = null,
+          '''
+
+          new_card_sig = '''private fun DriveAccountCard(
+              account: DriveAccount,
+              /** 网盘空间详情（已登录且有数据时在卡片内显示进度条）；null 不显示 */
+              quota: QuotaInfo? = null,
+              loginState: DriveLoginState =
+                  if (account.isLoggedIn) {
+                      DriveLoginState.CHECKING
+                  } else {
+                      DriveLoginState.LOGGED_OUT
+                  },
+              onClick: (() -> Unit)? = null,
+          '''
+
+          if drive.count(old_card_sig) != 1:
+              raise RuntimeError(
+                  "DriveAccountCard signature not found"
+              )
+
+          drive = drive.replace(
+              old_card_sig,
+              new_card_sig,
+              1
+          )
+
+          old_content_call = '''            quota = quota,
+                  clickable = onClick != null,
+          '''
+
+          new_content_call = '''            quota = quota,
+                  loginState = loginState,
+                  clickable = onClick != null,
+          '''
+
+          if drive.count(old_content_call) != 1:
+              raise RuntimeError(
+                  "DriveAccountCardContent call not found"
+              )
+
+          drive = drive.replace(
+              old_content_call,
+              new_content_call,
+              1
+          )
+
+          old_content_sig = '''private fun DriveAccountCardContent(
+              account: DriveAccount,
+              quota: QuotaInfo? = null,
+              clickable: Boolean,
+          '''
+
+          new_content_sig = '''private fun DriveAccountCardContent(
+              account: DriveAccount,
+              quota: QuotaInfo? = null,
+              loginState: DriveLoginState,
+              clickable: Boolean,
+          '''
+
+          if drive.count(old_content_sig) != 1:
+              raise RuntimeError(
+                  "DriveAccountCardContent signature not found"
+              )
+
+          drive = drive.replace(
+              old_content_sig,
+              new_content_sig,
+              1
+          )
+
+          # 在账号描述下方增加状态文字
+          old_description = '''            Text(
+                      text = account.description,
+                      style = MaterialTheme.typography.bodyMedium,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                  // 已登录且有空间数据：卡片内展示剩余空间进度条（出现时淡入 + 纵向展开，避免突兀）
+          '''
+
+          new_description = '''            Text(
+                      text = account.description,
+                      style = MaterialTheme.typography.bodyMedium,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+
+                  if (account.isLoggedIn) {
+                      Spacer(
+                          modifier = Modifier.height(3.dp)
+                      )
+
+                      val healthText = when (loginState) {
+                          DriveLoginState.CHECKING ->
+                              "● 检测中"
+
+                          DriveLoginState.HEALTHY ->
+                              "● 状态正常"
+
+                          DriveLoginState.SUSPECT ->
+                              "● 登录可能已失效"
+
+                          DriveLoginState.LOGGED_OUT ->
+                              "● 未登录"
+                      }
+
+                      Text(
+                          text = healthText,
+                          style =
+                              MaterialTheme.typography.labelSmall,
+                          color = when (loginState) {
+                              DriveLoginState.HEALTHY ->
+                                  MaterialTheme.colorScheme.primary
+
+                              DriveLoginState.SUSPECT ->
+                                  MaterialTheme.colorScheme.error
+
+                              else ->
+                                  MaterialTheme.colorScheme.onSurfaceVariant
+                          }
+                      )
+                  }
+
+                  // 已登录且有空间数据：卡片内展示剩余空间进度条（出现时淡入 + 纵向展开，避免突兀）
+          '''
+
+          if drive.count(old_description) != 1:
+              raise RuntimeError(
+                  "DriveAccountCard description block not found"
+              )
+
+          drive = drive.replace(
+              old_description,
+              new_description,
+              1
+          )
+
+          drive_path.write_text(
+              drive,
+              encoding="utf-8"
+          )
+
+          # ============================================================
+          # 4. ResolveScreen：
+          #    查看全部历史 + 搜索 + 单条删除 + 再次解析
+          # ============================================================
+
+          resolve_path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/screens/"
+              "ResolveScreen.kt"
+          )
+
+          resolve = resolve_path.read_text(
+              encoding="utf-8"
+          )
+
+          # 新增图标
+          old_icon_import = '''import androidx.compose.material.icons.outlined.ContentPaste
+          import androidx.compose.material.icons.outlined.ErrorOutline
+          '''
+
+          new_icon_import = '''import androidx.compose.material.icons.outlined.ContentPaste
+          import androidx.compose.material.icons.outlined.Delete
+          import androidx.compose.material.icons.outlined.ErrorOutline
+          import androidx.compose.material.icons.outlined.Search
+          '''
+
+          if resolve.count(old_icon_import) != 1:
+              raise RuntimeError(
+                  "ResolveScreen icon import point not found"
+              )
+
+          resolve = resolve.replace(
+              old_icon_import,
+              new_icon_import,
+              1
+          )
+
+          # 历史管理弹窗状态
+          old_recent_state = '''    var recentHistory by remember {
+                  mutableStateOf(
+                      historyRepository.load()
+                  )
+              }
+
+              fun resolveAndRemember(
+          '''
+
+          new_recent_state = '''    var recentHistory by remember {
+                  mutableStateOf(
+                      historyRepository.load()
+                  )
+              }
+
+              var showHistoryManager by remember {
+                  mutableStateOf(false)
+              }
+
+              fun resolveAndRemember(
+          '''
+
+          if resolve.count(old_recent_state) != 1:
+              raise RuntimeError(
+                  "Resolve history state insertion point not found"
+              )
+
+          resolve = resolve.replace(
+              old_recent_state,
+              new_recent_state,
+              1
+          )
+
+          # 给 ResolveInputContent 传入“查看全部”
+          old_clear_call = '''                        onClearHistory = {
+                              historyRepository.clear()
+
+                              recentHistory =
+                                  emptyList()
+                          }
+                      )
+          '''
+
+          new_clear_call = '''                        onShowAllHistory = {
+                              showHistoryManager = true
+                          },
+
+                          onClearHistory = {
+                              historyRepository.clear()
+
+                              recentHistory =
+                                  emptyList()
+                          }
+                      )
+          '''
+
+          if resolve.count(old_clear_call) != 1:
+              raise RuntimeError(
+                  "ResolveInputContent clear-history call not found"
+              )
+
+          resolve = resolve.replace(
+              old_clear_call,
+              new_clear_call,
+              1
+          )
+
+          # 在下载弹窗之前加入历史管理弹窗
+          marker = '''    // -----------------------------
+              // 获取下载链接加载弹窗
+              // -----------------------------
+          '''
+
+          history_dialog_call = '''    if (showHistoryManager) {
+                  HistoryManagerDialog(
+                      items = recentHistory,
+                      onSelect = { item ->
+                          showHistoryManager = false
+
+                          link = item.link
+                          pwd = item.password
+                          pwdEdited = true
+
+                          resolveAndRemember(
+                              item.link,
+                              item.password.ifBlank {
+                                  null
+                              }
+                          )
+                      },
+                      onDelete = { item ->
+                          recentHistory =
+                              historyRepository.remove(item)
+                      },
+                      onClearAll = {
+                          historyRepository.clear()
+                          recentHistory = emptyList()
+                          showHistoryManager = false
+                      },
+                      onDismiss = {
+                          showHistoryManager = false
+                      }
+                  )
+              }
+
+              // -----------------------------
+              // 获取下载链接加载弹窗
+              // -----------------------------
+          '''
+
+          if resolve.count(marker) != 1:
+              raise RuntimeError(
+                  "ResolveScreen history dialog insertion marker not found"
+              )
+
+          resolve = resolve.replace(
+              marker,
+              history_dialog_call,
+              1
+          )
+
+          # ResolveInputContent 增加参数
+          old_params = '''    onHistorySelect: (
+                  ResolveHistoryItem
+              ) -> Unit,
+
+              onClearHistory: () -> Unit
+          ) {
+          '''
+
+          new_params = '''    onHistorySelect: (
+                  ResolveHistoryItem
+              ) -> Unit,
+
+              onShowAllHistory: () -> Unit,
+
+              onClearHistory: () -> Unit
+          ) {
+          '''
+
+          if resolve.count(old_params) != 1:
+              raise RuntimeError(
+                  "ResolveInputContent history params not found"
+              )
+
+          resolve = resolve.replace(
+              old_params,
+              new_params,
+              1
+          )
+
+          # 最近解析标题行：加入“查看全部”
+          old_header_buttons = '''                TextButton(
+                          onClick =
+                              onClearHistory
+                      ) {
+                          Text(
+                              "清空"
+                          )
+                      }
+          '''
+
+          new_header_buttons = '''                TextButton(
+                          onClick =
+                              onShowAllHistory
+                      ) {
+                          Text(
+                              "查看全部"
+                          )
+                      }
+
+                      TextButton(
+                          onClick =
+                              onClearHistory
+                      ) {
+                          Text(
+                              "清空"
+                          )
+                      }
+          '''
+
+          if resolve.count(old_header_buttons) != 1:
+              raise RuntimeError(
+                  "Recent history header buttons not found"
+              )
+
+          resolve = resolve.replace(
+              old_header_buttons,
+              new_header_buttons,
+              1
+          )
+
+          # 删除“仅显示最近3条...”提示，查看全部按钮已能承担入口
+          old_hint = '''                if (
+                      recentHistory.size > 3
+                  ) {
+                      Text(
+                          text =
+                              "仅显示最近 3 条，共 ${recentHistory.size} 条记录",
+
+                          style =
+                              MaterialTheme
+                                  .typography
+                                  .bodySmall,
+
+                          color =
+                              MaterialTheme
+                                  .colorScheme
+                                  .onSurfaceVariant
+                      )
+                  }
+          '''
+
+          if resolve.count(old_hint) != 1:
+              raise RuntimeError(
+                  "Recent-history count hint not found"
+              )
+
+          resolve = resolve.replace(
+              old_hint,
+              "",
+              1
+          )
+
+          # 在 LoadingContent 前插入完整历史管理弹窗
+          loading_marker = '''/**
+           * 全屏加载
+           */
+          @Composable
+          private fun LoadingContent() {
+          '''
+
+          history_dialog = '''@Composable
+          private fun HistoryManagerDialog(
+              items: List<ResolveHistoryItem>,
+              onSelect: (ResolveHistoryItem) -> Unit,
+              onDelete: (ResolveHistoryItem) -> Unit,
+              onClearAll: () -> Unit,
+              onDismiss: () -> Unit
+          ) {
+              var query by rememberSaveable {
+                  mutableStateOf("")
+              }
+
+              val filtered = remember(
+                  items,
+                  query
+              ) {
+                  val keyword = query.trim()
+
+                  if (keyword.isBlank()) {
+                      items
+                  } else {
+                      items.filter { item ->
+                          item.platformName.contains(
+                              keyword,
+                              ignoreCase = true
+                          ) ||
+                              item.link.contains(
+                                  keyword,
+                                  ignoreCase = true
+                              ) ||
+                              item.shareId.contains(
+                                  keyword,
+                                  ignoreCase = true
+                              )
+                      }
+                  }
+              }
+
+              AlertDialog(
+                  onDismissRequest = onDismiss,
+
+                  title = {
+                      Text(
+                          "解析历史"
+                      )
+                  },
+
+                  text = {
+                      Column(
+                          modifier =
+                              Modifier
+                                  .fillMaxWidth()
+                                  .heightIn(
+                                      max = 520.dp
+                                  )
+                      ) {
+                          OutlinedTextField(
+                              value = query,
+
+                              onValueChange = {
+                                  query = it
+                              },
+
+                              modifier =
+                                  Modifier.fillMaxWidth(),
+
+                              placeholder = {
+                                  Text(
+                                      "搜索平台或分享链接"
+                                  )
+                              },
+
+                              leadingIcon = {
+                                  Icon(
+                                      imageVector =
+                                          Icons.Outlined.Search,
+
+                                      contentDescription =
+                                          null
+                                  )
+                              },
+
+                              singleLine = true,
+
+                              shape =
+                                  MaterialTheme
+                                      .shapes
+                                      .large
+                          )
+
+                          Spacer(
+                              modifier =
+                                  Modifier.height(12.dp)
+                          )
+
+                          if (filtered.isEmpty()) {
+                              Text(
+                                  text =
+                                      if (items.isEmpty()) {
+                                          "暂无解析历史"
+                                      } else {
+                                          "没有找到匹配的记录"
+                                      },
+
+                                  modifier =
+                                      Modifier
+                                          .fillMaxWidth()
+                                          .padding(
+                                              vertical = 24.dp
+                                          ),
+
+                                  style =
+                                      MaterialTheme
+                                          .typography
+                                          .bodyMedium,
+
+                                  color =
+                                      MaterialTheme
+                                          .colorScheme
+                                          .onSurfaceVariant
+                              )
+                          } else {
+                              Column(
+                                  modifier =
+                                      Modifier
+                                          .verticalScroll(
+                                              rememberScrollState()
+                                          ),
+
+                                  verticalArrangement =
+                                      Arrangement.spacedBy(
+                                          8.dp
+                                      )
+                              ) {
+                                  filtered.forEach {
+                                          item ->
+
+                                      Card(
+                                          onClick = {
+                                              onSelect(
+                                                  item
+                                              )
+                                          },
+
+                                          modifier =
+                                              Modifier
+                                                  .fillMaxWidth(),
+
+                                          colors =
+                                              CardDefaults
+                                                  .cardColors(
+                                                      containerColor =
+                                                          MaterialTheme
+                                                              .colorScheme
+                                                              .surfaceContainerLow
+                                                  )
+                                      ) {
+                                          Row(
+                                              modifier =
+                                                  Modifier
+                                                      .fillMaxWidth()
+                                                      .padding(
+                                                          12.dp
+                                                      ),
+
+                                              verticalAlignment =
+                                                  Alignment.CenterVertically
+                                          ) {
+                                              Column(
+                                                  modifier =
+                                                      Modifier
+                                                          .weight(1f)
+                                              ) {
+                                                  Text(
+                                                      text =
+                                                          buildString {
+                                                              append(
+                                                                  item.platformName
+                                                              )
+
+                                                              if (
+                                                                  item.password
+                                                                      .isNotBlank()
+                                                              ) {
+                                                                  append(
+                                                                      " · 提取码 "
+                                                                  )
+
+                                                                  append(
+                                                                      item.password
+                                                                  )
+                                                              }
+                                                          },
+
+                                                      style =
+                                                          MaterialTheme
+                                                              .typography
+                                                              .titleSmall,
+
+                                                      fontWeight =
+                                                          FontWeight.Medium,
+
+                                                      maxLines = 1,
+
+                                                      overflow =
+                                                          TextOverflow.Ellipsis
+                                                  )
+
+                                                  Spacer(
+                                                      modifier =
+                                                          Modifier.height(
+                                                              3.dp
+                                                          )
+                                                  )
+
+                                                  Text(
+                                                      text =
+                                                          item.link,
+
+                                                      style =
+                                                          MaterialTheme
+                                                              .typography
+                                                              .bodySmall,
+
+                                                      color =
+                                                          MaterialTheme
+                                                              .colorScheme
+                                                              .onSurfaceVariant,
+
+                                                      maxLines = 1,
+
+                                                      overflow =
+                                                          TextOverflow.Ellipsis
+                                                  )
+                                              }
+
+                                              IconButton(
+                                                  onClick = {
+                                                      onDelete(
+                                                          item
+                                                      )
+                                                  }
+                                              ) {
+                                                  Icon(
+                                                      imageVector =
+                                                          Icons.Outlined.Delete,
+
+                                                      contentDescription =
+                                                          "删除历史",
+
+                                                      tint =
+                                                          MaterialTheme
+                                                              .colorScheme
+                                                              .error
+                                                  )
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  },
+
+                  confirmButton = {
+                      TextButton(
+                          onClick = onDismiss
+                      ) {
+                          Text(
+                              "关闭"
+                          )
+                      }
+                  },
+
+                  dismissButton = {
+                      if (items.isNotEmpty()) {
+                          TextButton(
+                              onClick =
+                                  onClearAll
+                          ) {
+                              Text(
+                                  text =
+                                      "清空全部",
+
+                                  color =
+                                      MaterialTheme
+                                          .colorScheme
+                                          .error
+                              )
+                          }
+                      }
+                  }
+              )
+          }
+
+          /**
+           * 全屏加载
+           */
+          @Composable
+          private fun LoadingContent() {
+          '''
+
+          if resolve.count(loading_marker) != 1:
+              raise RuntimeError(
+                  "HistoryManagerDialog insertion point not found"
+              )
+
+          resolve = resolve.replace(
+              loading_marker,
+              history_dialog,
+              1
+          )
+
+          resolve_path.write_text(
+              resolve,
+              encoding="utf-8"
+          )
+
+          print(
+              "Second-batch source changes applied successfully."
+          )
+          PY
+
+      - name: Show changed files
+        shell: bash
+        run: |
+          git status --short
+          echo
+          git diff --stat
+          echo
+          git diff --check
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          test -x "$SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0"
+
+      - name: Configure debug build
+        shell: bash
+        run: |
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties
+
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" \
+            > local.properties
+
+          chmod +x gradlew
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            testDebugUnitTest
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            assembleDebug
+
+      - name: Verify debug APK
+        shell: bash
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          test -f "$APK"
+
+          ls -lh "$APK"
+
+      - name: Remove temporary workflow
+        shell: bash
+        run: |
+          rm -f \
+            .github/workflows/apply-second-batch.yml
+
+      - name: Commit verified changes
+        shell: bash
+        run: |
+          git config user.name \
+            "github-actions[bot]"
+
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit \
+            -m "feat: add account health and history management"
+
+          git push origin HEAD:main
