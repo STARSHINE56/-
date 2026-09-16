@@ -54,10 +54,17 @@ jobs:
                       new,
                       1
                   )
-                  print("Fixed:", old)
+
+                  print(
+                      "Fixed:",
+                      old
+                  )
 
               elif new in manifest:
-                  print("Already fixed:", new)
+                  print(
+                      "Already fixed:",
+                      new
+                  )
 
               else:
                   raise RuntimeError(
@@ -83,15 +90,17 @@ jobs:
               encoding="utf-8"
           )
 
-          old_baidu = '''                val path = item.optString("path")
-                    add(
-                        ShareFile(
-          '''
+          old_baidu = (
+              '                val path = item.optString("path")\n'
+              '                    add(\n'
+              '                        ShareFile(\n'
+          )
 
-          new_baidu = '''                val path = item.optString("path")
-                add(
-                    ShareFile(
-          '''
+          new_baidu = (
+              '                val path = item.optString("path")\n'
+              '                add(\n'
+              '                    ShareFile(\n'
+          )
 
           if old_baidu in baidu:
               baidu = baidu.replace(
@@ -99,12 +108,20 @@ jobs:
                   new_baidu,
                   1
               )
-              print("Fixed BaiduApi indentation")
+
+              print(
+                  "Fixed BaiduApi indentation"
+              )
+
+          elif new_baidu in baidu:
+              print(
+                  "BaiduApi indentation already fixed"
+              )
 
           else:
               print(
-                  "BaiduApi indentation already fixed "
-                  "or source changed"
+                  "BaiduApi target block not found; "
+                  "source may already differ"
               )
 
           baidu_path.write_text(
@@ -125,37 +142,50 @@ jobs:
               encoding="utf-8"
           )
 
-          old_xunlei = '''            .header("Referer", "https://pan.xunlei.com/")
-            if (captchaToken.isNotBlank()) builder.header("X-Captcha-Token", captchaToken)
-          '''
+          old_xunlei = (
+              '            .header("Referer", "https://pan.xunlei.com/")\n'
+              '            if (captchaToken.isNotBlank()) '
+              'builder.header("X-Captcha-Token", captchaToken)\n'
+          )
 
-          new_xunlei = '''            .header("Referer", "https://pan.xunlei.com/")
+          new_xunlei = (
+              '            .header("Referer", "https://pan.xunlei.com/")\n'
+              '\n'
+              '        if (captchaToken.isNotBlank()) {\n'
+              '            builder.header(\n'
+              '                "X-Captcha-Token",\n'
+              '                captchaToken\n'
+              '            )\n'
+              '        }\n'
+          )
 
-        if (captchaToken.isNotBlank()) {
-            builder.header(
-                "X-Captcha-Token",
-                captchaToken
-            )
-        }
-          '''
-
-          count = xunlei.count(
+          xunlei_count = xunlei.count(
               old_xunlei
           )
 
-          if count:
+          if xunlei_count > 0:
               xunlei = xunlei.replace(
                   old_xunlei,
                   new_xunlei
               )
+
               print(
-                  f"Fixed XunleiApi indentation: {count}"
+                  "Fixed XunleiApi indentation:",
+                  xunlei_count
+              )
+
+          elif (
+              '"X-Captcha-Token",\n'
+              '                captchaToken'
+          ) in xunlei:
+              print(
+                  "XunleiApi indentation already fixed"
               )
 
           else:
               print(
-                  "XunleiApi indentation already fixed "
-                  "or source changed"
+                  "XunleiApi target blocks not found; "
+                  "source may already differ"
               )
 
           xunlei_path.write_text(
@@ -165,7 +195,7 @@ jobs:
 
           # =========================================================
           # Theme.kt
-          # 仅针对明确使用的 Material Color Utilities API
+          # RestrictedApi 只在 seedColorScheme() 局部忽略
           # =========================================================
 
           theme_path = Path(
@@ -194,8 +224,7 @@ jobs:
 
           if annotated_marker in theme:
               print(
-                  "Theme RestrictedApi suppression "
-                  "already exists"
+                  "Theme RestrictedApi suppression already exists"
               )
 
           elif function_marker in theme:
@@ -271,7 +300,9 @@ jobs:
             '/aapt2FromMavenOverride/d' \
             gradle.properties
 
-          printf 'sdk.dir=%s\n' "$ANDROID_HOME" \
+          printf \
+            'sdk.dir=%s\n' \
+            "$ANDROID_HOME" \
             > local.properties
 
           chmod +x gradlew
@@ -283,6 +314,7 @@ jobs:
 
           echo
           echo "Changed files:"
+
           git diff --name-only
 
       - name: Run unit tests
@@ -294,12 +326,12 @@ jobs:
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             testDebugUnitTest
 
-      # 第一次 Lint 用来查看修复真实问题后还剩多少历史问题。
-      # 这里只允许这一步失败，不修改源码。
+      # 第一次 Lint 只统计剩余历史问题。
+      # 不执行 lintFix，也不会自动修改 Kotlin 源码。
       - name: Run lint before baseline
         id: lint_before
-        continue-on-error: true
         shell: bash
+        continue-on-error: true
         run: |
           ./gradlew \
             --no-daemon \
@@ -321,34 +353,43 @@ jobs:
               encoding="utf-8"
           )
 
-          baseline = (
+          baseline_line = (
               'baseline = file("lint-baseline.xml")'
           )
 
-          if baseline in text:
+          if baseline_line in text:
               print(
                   "Lint baseline already configured"
               )
+
               raise SystemExit(0)
 
-          marker = "\n}\n\ndependencies {"
+          marker = (
+              "\n}\n\n"
+              "dependencies {"
+          )
 
           if marker not in text:
               raise RuntimeError(
                   "Cannot locate end of android block"
               )
 
-          lint_block = '''
-          
-              lint {
-                  baseline = file("lint-baseline.xml")
-              }
-          '''
+          lint_block = (
+              "\n"
+              "    lint {\n"
+              '        baseline = file("lint-baseline.xml")\n'
+              "    }\n"
+          )
+
+          replacement = (
+              lint_block
+              + "\n}\n\n"
+              + "dependencies {"
+          )
 
           text = text.replace(
               marker,
-              lint_block
-              + "\n}\n\ndependencies {",
+              replacement,
               1
           )
 
@@ -362,10 +403,22 @@ jobs:
           )
           PY
 
+      - name: Verify Gradle syntax before baseline
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            tasks >/dev/null
+
+          echo "Gradle configuration verified"
+
       - name: Generate lint baseline
         shell: bash
         run: |
-          rm -f app/lint-baseline.xml
+          rm -f \
+            app/lint-baseline.xml
 
           ./gradlew \
             --no-daemon \
@@ -373,14 +426,17 @@ jobs:
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             updateLintBaseline
 
-          test -f app/lint-baseline.xml
+          test -f \
+            app/lint-baseline.xml
 
           echo
           echo "Baseline created:"
-          wc -l app/lint-baseline.xml
 
-      # 这一遍不能失败。
-      # baseline 之外出现任何新的 Lint 错误都会阻止提交。
+          wc -l \
+            app/lint-baseline.xml
+
+      # 最终 Lint 不允许失败。
+      # baseline 外的新错误仍会阻止提交。
       - name: Run final Android lint
         shell: bash
         run: |
@@ -416,6 +472,7 @@ jobs:
           test -f "$APK"
 
           echo "APK build successful:"
+
           ls -lh "$APK"
 
       - name: Final verification
@@ -424,12 +481,28 @@ jobs:
           MANIFEST="app/src/main/AndroidManifest.xml"
 
           grep -q \
-            'com.yunx.app.crash.CrashActivity' \
+            'android:name="com.yunx.app.crash.CrashActivity"' \
             "$MANIFEST"
 
           grep -q \
-            'com.yunx.app.data.download.DownloadService' \
+            'android:name="com.yunx.app.data.download.DownloadService"' \
             "$MANIFEST"
+
+          if grep -q \
+            'android:name=".crash.CrashActivity"' \
+            "$MANIFEST"
+          then
+            echo "Old CrashActivity manifest path still exists"
+            exit 1
+          fi
+
+          if grep -q \
+            'android:name=".data.download.DownloadService"' \
+            "$MANIFEST"
+          then
+            echo "Old DownloadService manifest path still exists"
+            exit 1
+          fi
 
           grep -q \
             '@android.annotation.SuppressLint("RestrictedApi")' \
@@ -439,16 +512,30 @@ jobs:
             'baseline = file("lint-baseline.xml")' \
             app/build.gradle.kts
 
-          test -f app/lint-baseline.xml
+          test -f \
+            app/lint-baseline.xml
 
           git diff --check
 
           echo
           echo "Final verification passed"
 
-      # 只添加真正需要提交的源码。
-      # 故意不使用 git add -A，
-      # 也不修改任何 .github/workflows 文件。
+      - name: Show final changes
+        shell: bash
+        run: |
+          echo "----- STATUS -----"
+          git status --short
+
+          echo
+          echo "----- DIFF STAT -----"
+          git diff --stat
+
+          echo
+          echo "----- CHANGED FILES -----"
+          git diff --name-only
+
+      # 只提交源码和 baseline。
+      # 不修改、不删除任何 .github/workflows 文件。
       - name: Commit fixes
         shell: bash
         run: |
@@ -475,7 +562,9 @@ jobs:
 
           git diff --cached --check
 
-          git status --short
+          echo
+          echo "Files to commit:"
+          git diff --cached --name-only
 
           git commit \
             -m "fix: clean up Android lint issues"
