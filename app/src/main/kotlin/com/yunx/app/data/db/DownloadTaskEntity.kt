@@ -38,6 +38,9 @@ data class DownloadTaskEntity(
     /** 下载完成时的平均速度（字节/秒）；完成态展示用，进行中为 0 */
     @ColumnInfo(defaultValue = "0")
     val avgSpeed: Long = 0,
+    /** 完成时间；旧版本记录迁移时为 0，界面以创建时间兜底。 */
+    @ColumnInfo(defaultValue = "0")
+    val completedTime: Long = 0L,
     val createTime: Long = System.currentTimeMillis()
 ) {
     companion object {
