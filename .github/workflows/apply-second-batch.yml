@@ -30,11 +30,9 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import re
 
-          def replace_once(path, old, new, label):
-              path = Path(path)
-              text = path.read_text(encoding="utf-8")
-
+          def replace_exact(text, old, new, label):
               count = text.count(old)
 
               if count != 1:
@@ -42,15 +40,42 @@ jobs:
                       f"{label}: expected 1 match, found {count}"
                   )
 
-              path.write_text(
-                  text.replace(old, new, 1),
-                  encoding="utf-8"
+              print(f"OK: {label}")
+
+              return text.replace(
+                  old,
+                  new,
+                  1
               )
+
+          def replace_regex(
+              text,
+              pattern,
+              replacement,
+              label,
+              flags=0
+          ):
+              updated, count = re.subn(
+                  pattern,
+                  replacement,
+                  text,
+                  count=1,
+                  flags=flags
+              )
+
+              if count != 1:
+                  raise RuntimeError(
+                      f"{label}: expected 1 match, found {count}"
+                  )
 
               print(f"OK: {label}")
 
+              return updated
+
           # ============================================================
-          # 1. 解析历史：上限 30 + 单条删除
+          # 1. 解析历史：
+          #    - 最多 30 条
+          #    - 支持单条删除
           # ============================================================
 
           history_path = Path(
@@ -62,17 +87,13 @@ jobs:
               encoding="utf-8"
           )
 
-          old_clear = '''    fun clear() {
-                  prefs
-                      .edit()
-                      .remove(KEY_HISTORY)
-                      .apply()
-              }
-
-              private fun save(
-          '''
-
-          new_clear = '''    fun remove(
+          history = replace_regex(
+              history,
+              r'''
+              (\n\s*fun\s+clear\(\)\s*\{)
+              ''',
+              '''
+              \n    fun remove(
                   item: ResolveHistoryItem
               ): List<ResolveHistoryItem> {
                   val updated = load().filterNot {
@@ -85,36 +106,22 @@ jobs:
                   return updated
               }
 
-              fun clear() {
-                  prefs
-                      .edit()
-                      .remove(KEY_HISTORY)
-                      .apply()
-              }
-
-              private fun save(
-          '''
-
-          if history.count(old_clear) != 1:
-              raise RuntimeError(
-                  "ResolveHistoryRepository remove insertion point not found"
-              )
-
-          history = history.replace(
-              old_clear,
-              new_clear,
-              1
+              \\1
+              ''',
+              "Add history remove()",
+              re.VERBOSE
           )
 
-          if "const val MAX_HISTORY =\n            10" not in history:
-              raise RuntimeError(
-                  "ResolveHistoryRepository MAX_HISTORY=10 not found"
-              )
-
-          history = history.replace(
-              "const val MAX_HISTORY =\n            10",
-              "const val MAX_HISTORY =\n            30",
-              1
+          history = replace_regex(
+              history,
+              r'''
+              const\s+val\s+MAX_HISTORY\s*=\s*
+              10
+              ''',
+              '''const val MAX_HISTORY =
+                      30''',
+              "Increase history limit to 30",
+              re.VERBOSE
           )
 
           history_path.write_text(
@@ -124,7 +131,7 @@ jobs:
 
           # ============================================================
           # 2. DriveQuotaViewModel：
-          #    添加真实账号健康状态
+          #    使用现有容量接口检测账号健康状态
           # ============================================================
 
           quota_path = Path(
@@ -132,8 +139,7 @@ jobs:
               "DriveQuotaViewModel.kt"
           )
 
-          quota_path.write_text(
-          '''package com.yunx.app.ui.viewmodel
+          quota_code = r'''package com.yunx.app.ui.viewmodel
 
           import androidx.lifecycle.ViewModel
           import androidx.lifecycle.ViewModelProvider
@@ -152,10 +158,11 @@ jobs:
           import kotlinx.coroutines.launch
 
           /**
-           * 已保存凭证的健康状态。
+           * 已保存登录凭证的检测状态。
            *
-           * SUSPECT 只表示接口检测失败，可能是凭证失效，
-           * 也可能是临时网络/API 异常，因此不会自动退出账号。
+           * SUSPECT 表示接口检测失败。
+           * 可能是登录凭证失效，也可能只是临时网络或网盘接口异常，
+           * 因此不会自动删除账号或退出登录。
            */
           enum class DriveLoginState {
               LOGGED_OUT,
@@ -164,6 +171,11 @@ jobs:
               SUSPECT
           }
 
+          /**
+           * 网盘容量与账号健康检测。
+           *
+           * 六个平台并发检测，互不阻塞。
+           */
           class DriveQuotaViewModel(
               private val quarkApi: QuarkApi,
               private val quarkCookie: suspend () -> String?,
@@ -183,31 +195,37 @@ jobs:
 
               private val _quarkQuota =
                   MutableStateFlow<QuotaInfo?>(null)
+
               val quarkQuota: StateFlow<QuotaInfo?> =
                   _quarkQuota.asStateFlow()
 
               private val _ucQuota =
                   MutableStateFlow<QuotaInfo?>(null)
+
               val ucQuota: StateFlow<QuotaInfo?> =
                   _ucQuota.asStateFlow()
 
               private val _xunleiQuota =
                   MutableStateFlow<QuotaInfo?>(null)
+
               val xunleiQuota: StateFlow<QuotaInfo?> =
                   _xunleiQuota.asStateFlow()
 
               private val _baiduQuota =
                   MutableStateFlow<QuotaInfo?>(null)
+
               val baiduQuota: StateFlow<QuotaInfo?> =
                   _baiduQuota.asStateFlow()
 
               private val _c139Quota =
                   MutableStateFlow<QuotaInfo?>(null)
+
               val c139Quota: StateFlow<QuotaInfo?> =
                   _c139Quota.asStateFlow()
 
               private val _pan123Quota =
                   MutableStateFlow<QuotaInfo?>(null)
+
               val pan123Quota: StateFlow<QuotaInfo?> =
                   _pan123Quota.asStateFlow()
 
@@ -215,6 +233,7 @@ jobs:
                   MutableStateFlow(
                       DriveLoginState.LOGGED_OUT
                   )
+
               val quarkLoginState =
                   _quarkLoginState.asStateFlow()
 
@@ -222,6 +241,7 @@ jobs:
                   MutableStateFlow(
                       DriveLoginState.LOGGED_OUT
                   )
+
               val ucLoginState =
                   _ucLoginState.asStateFlow()
 
@@ -229,6 +249,7 @@ jobs:
                   MutableStateFlow(
                       DriveLoginState.LOGGED_OUT
                   )
+
               val xunleiLoginState =
                   _xunleiLoginState.asStateFlow()
 
@@ -236,6 +257,7 @@ jobs:
                   MutableStateFlow(
                       DriveLoginState.LOGGED_OUT
                   )
+
               val baiduLoginState =
                   _baiduLoginState.asStateFlow()
 
@@ -243,6 +265,7 @@ jobs:
                   MutableStateFlow(
                       DriveLoginState.LOGGED_OUT
                   )
+
               val c139LoginState =
                   _c139LoginState.asStateFlow()
 
@@ -250,200 +273,281 @@ jobs:
                   MutableStateFlow(
                       DriveLoginState.LOGGED_OUT
                   )
+
               val pan123LoginState =
                   _pan123LoginState.asStateFlow()
 
+              /** 是否正在刷新。 */
               val loading =
                   MutableStateFlow(false)
 
+              /**
+               * 并发检测全部平台。
+               *
+               * 没有保存凭证的平台显示未登录；
+               * 有凭证但接口调用失败的平台显示“登录可能已失效”。
+               */
               fun loadAll() {
-                  if (loading.value) return
+                  if (loading.value) {
+                      return
+                  }
 
                   loading.value = true
 
                   viewModelScope.launch {
                       try {
                           coroutineScope {
+                              // 夸克
                               launch {
-                                  val credential =
-                                      quarkCookie()
+                                  val cookie =
+                                      runCatching {
+                                          quarkCookie()
+                                      }.getOrNull()
 
-                                  if (credential.isNullOrBlank()) {
-                                      _quarkQuota.value = null
+                                  if (cookie.isNullOrBlank()) {
+                                      _quarkQuota.value =
+                                          null
+
                                       _quarkLoginState.value =
                                           DriveLoginState.LOGGED_OUT
-                                  } else {
-                                      _quarkLoginState.value =
-                                          DriveLoginState.CHECKING
 
-                                      runCatching {
-                                          quarkApi.getQuota(
-                                              credential
-                                          )
-                                      }.onSuccess {
-                                          _quarkQuota.value = it
-                                          _quarkLoginState.value =
-                                              DriveLoginState.HEALTHY
-                                      }.onFailure {
-                                          _quarkQuota.value = null
-                                          _quarkLoginState.value =
-                                              DriveLoginState.SUSPECT
-                                      }
+                                      return@launch
+                                  }
+
+                                  _quarkLoginState.value =
+                                      DriveLoginState.CHECKING
+
+                                  runCatching {
+                                      quarkApi.getQuota(
+                                          cookie
+                                      )
+                                  }.onSuccess {
+                                      _quarkQuota.value =
+                                          it
+
+                                      _quarkLoginState.value =
+                                          DriveLoginState.HEALTHY
+                                  }.onFailure {
+                                      _quarkQuota.value =
+                                          null
+
+                                      _quarkLoginState.value =
+                                          DriveLoginState.SUSPECT
                                   }
                               }
 
+                              // UC
                               launch {
-                                  val credential =
-                                      ucCookie()
+                                  val cookie =
+                                      runCatching {
+                                          ucCookie()
+                                      }.getOrNull()
 
-                                  if (credential.isNullOrBlank()) {
-                                      _ucQuota.value = null
+                                  if (cookie.isNullOrBlank()) {
+                                      _ucQuota.value =
+                                          null
+
                                       _ucLoginState.value =
                                           DriveLoginState.LOGGED_OUT
-                                  } else {
-                                      _ucLoginState.value =
-                                          DriveLoginState.CHECKING
 
-                                      runCatching {
-                                          ucApi.getQuota(
-                                              credential
-                                          )
-                                      }.onSuccess {
-                                          _ucQuota.value = it
-                                          _ucLoginState.value =
-                                              DriveLoginState.HEALTHY
-                                      }.onFailure {
-                                          _ucQuota.value = null
-                                          _ucLoginState.value =
-                                              DriveLoginState.SUSPECT
-                                      }
+                                      return@launch
+                                  }
+
+                                  _ucLoginState.value =
+                                      DriveLoginState.CHECKING
+
+                                  runCatching {
+                                      ucApi.getQuota(
+                                          cookie
+                                      )
+                                  }.onSuccess {
+                                      _ucQuota.value =
+                                          it
+
+                                      _ucLoginState.value =
+                                          DriveLoginState.HEALTHY
+                                  }.onFailure {
+                                      _ucQuota.value =
+                                          null
+
+                                      _ucLoginState.value =
+                                          DriveLoginState.SUSPECT
                                   }
                               }
 
+                              // 迅雷
                               launch {
                                   val token =
-                                      xunleiToken()
+                                      runCatching {
+                                          xunleiToken()
+                                      }.getOrNull()
 
                                   if (token.isNullOrBlank()) {
-                                      _xunleiQuota.value = null
+                                      _xunleiQuota.value =
+                                          null
+
                                       _xunleiLoginState.value =
                                           DriveLoginState.LOGGED_OUT
-                                  } else {
-                                      _xunleiLoginState.value =
-                                          DriveLoginState.CHECKING
 
-                                      val deviceId =
+                                      return@launch
+                                  }
+
+                                  _xunleiLoginState.value =
+                                      DriveLoginState.CHECKING
+
+                                  val deviceId =
+                                      runCatching {
                                           xunleiDeviceId()
-                                              .orEmpty()
+                                      }.getOrNull()
+                                          .orEmpty()
 
-                                      val captcha =
+                                  val captcha =
+                                      runCatching {
                                           xunleiCaptcha()
-                                              .orEmpty()
+                                      }.getOrNull()
+                                          .orEmpty()
 
-                                      runCatching {
-                                          xunleiApi.getQuota(
-                                              token,
-                                              deviceId,
-                                              captcha
-                                          )
-                                      }.onSuccess {
-                                          _xunleiQuota.value = it
-                                          _xunleiLoginState.value =
-                                              DriveLoginState.HEALTHY
-                                      }.onFailure {
-                                          _xunleiQuota.value = null
-                                          _xunleiLoginState.value =
-                                              DriveLoginState.SUSPECT
-                                      }
+                                  runCatching {
+                                      xunleiApi.getQuota(
+                                          token,
+                                          deviceId,
+                                          captcha
+                                      )
+                                  }.onSuccess {
+                                      _xunleiQuota.value =
+                                          it
+
+                                      _xunleiLoginState.value =
+                                          DriveLoginState.HEALTHY
+                                  }.onFailure {
+                                      _xunleiQuota.value =
+                                          null
+
+                                      _xunleiLoginState.value =
+                                          DriveLoginState.SUSPECT
                                   }
                               }
 
+                              // 百度
                               launch {
-                                  val credential =
-                                      baiduCookie()
+                                  val cookie =
+                                      runCatching {
+                                          baiduCookie()
+                                      }.getOrNull()
 
-                                  if (credential.isNullOrBlank()) {
-                                      _baiduQuota.value = null
+                                  if (cookie.isNullOrBlank()) {
+                                      _baiduQuota.value =
+                                          null
+
                                       _baiduLoginState.value =
                                           DriveLoginState.LOGGED_OUT
-                                  } else {
-                                      _baiduLoginState.value =
-                                          DriveLoginState.CHECKING
 
-                                      runCatching {
-                                          baiduApi.getQuota(
-                                              credential
-                                          )
-                                      }.onSuccess {
-                                          _baiduQuota.value = it
-                                          _baiduLoginState.value =
-                                              DriveLoginState.HEALTHY
-                                      }.onFailure {
-                                          _baiduQuota.value = null
-                                          _baiduLoginState.value =
-                                              DriveLoginState.SUSPECT
-                                      }
+                                      return@launch
+                                  }
+
+                                  _baiduLoginState.value =
+                                      DriveLoginState.CHECKING
+
+                                  runCatching {
+                                      baiduApi.getQuota(
+                                          cookie
+                                      )
+                                  }.onSuccess {
+                                      _baiduQuota.value =
+                                          it
+
+                                      _baiduLoginState.value =
+                                          DriveLoginState.HEALTHY
+                                  }.onFailure {
+                                      _baiduQuota.value =
+                                          null
+
+                                      _baiduLoginState.value =
+                                          DriveLoginState.SUSPECT
                                   }
                               }
 
+                              // 移动云盘
                               launch {
-                                  val credential =
-                                      c139Cookie()
+                                  val cookie =
+                                      runCatching {
+                                          c139Cookie()
+                                      }.getOrNull()
 
-                                  if (credential.isNullOrBlank()) {
-                                      _c139Quota.value = null
+                                  if (cookie.isNullOrBlank()) {
+                                      _c139Quota.value =
+                                          null
+
                                       _c139LoginState.value =
                                           DriveLoginState.LOGGED_OUT
-                                  } else {
-                                      _c139LoginState.value =
-                                          DriveLoginState.CHECKING
 
-                                      runCatching {
-                                          c139Api.getQuota(
-                                              credential
-                                          )
-                                      }.onSuccess {
-                                          _c139Quota.value = it
-                                          _c139LoginState.value =
-                                              DriveLoginState.HEALTHY
-                                      }.onFailure {
-                                          _c139Quota.value = null
-                                          _c139LoginState.value =
-                                              DriveLoginState.SUSPECT
-                                      }
+                                      return@launch
+                                  }
+
+                                  _c139LoginState.value =
+                                      DriveLoginState.CHECKING
+
+                                  runCatching {
+                                      c139Api.getQuota(
+                                          cookie
+                                      )
+                                  }.onSuccess {
+                                      _c139Quota.value =
+                                          it
+
+                                      _c139LoginState.value =
+                                          DriveLoginState.HEALTHY
+                                  }.onFailure {
+                                      _c139Quota.value =
+                                          null
+
+                                      _c139LoginState.value =
+                                          DriveLoginState.SUSPECT
                                   }
                               }
 
+                              // 123 云盘
                               launch {
                                   val token =
-                                      pan123Token()
+                                      runCatching {
+                                          pan123Token()
+                                      }.getOrNull()
 
                                   if (token.isNullOrBlank()) {
-                                      _pan123Quota.value = null
+                                      _pan123Quota.value =
+                                          null
+
                                       _pan123LoginState.value =
                                           DriveLoginState.LOGGED_OUT
-                                  } else {
-                                      _pan123LoginState.value =
-                                          DriveLoginState.CHECKING
 
-                                      runCatching {
-                                          pan123Api.getQuota(
-                                              token
-                                          )
-                                      }.onSuccess {
-                                          _pan123Quota.value = it
-                                          _pan123LoginState.value =
-                                              DriveLoginState.HEALTHY
-                                      }.onFailure {
-                                          _pan123Quota.value = null
-                                          _pan123LoginState.value =
-                                              DriveLoginState.SUSPECT
-                                      }
+                                      return@launch
+                                  }
+
+                                  _pan123LoginState.value =
+                                      DriveLoginState.CHECKING
+
+                                  runCatching {
+                                      pan123Api.getQuota(
+                                          token
+                                      )
+                                  }.onSuccess {
+                                      _pan123Quota.value =
+                                          it
+
+                                      _pan123LoginState.value =
+                                          DriveLoginState.HEALTHY
+                                  }.onFailure {
+                                      _pan123Quota.value =
+                                          null
+
+                                      _pan123LoginState.value =
+                                          DriveLoginState.SUSPECT
                                   }
                               }
                           }
                       } finally {
-                          loading.value = false
+                          loading.value =
+                              false
                       }
                   }
               }
@@ -495,13 +599,20 @@ jobs:
                       ) as T
               }
           }
-          '''.replace("\n          ", "\n").lstrip(),
+          '''
+
+          quota_path.write_text(
+              quota_code,
               encoding="utf-8"
+          )
+
+          print(
+              "OK: DriveQuotaViewModel account health"
           )
 
           # ============================================================
           # 3. DriveScreen：
-          #    为六个平台显示健康状态
+          #    卡片显示 检测中 / 状态正常 / 登录可能已失效
           # ============================================================
 
           drive_path = Path(
@@ -513,202 +624,172 @@ jobs:
               encoding="utf-8"
           )
 
-          old_import = '''import com.yunx.app.ui.viewmodel.DriveQuotaViewModel
-          '''
-
-          new_import = '''import com.yunx.app.ui.viewmodel.DriveLoginState
-          import com.yunx.app.ui.viewmodel.DriveQuotaViewModel
-          '''
-
-          if drive.count(old_import) != 1:
-              raise RuntimeError(
-                  "DriveScreen DriveQuotaViewModel import not found"
-              )
-
-          drive = drive.replace(
-              old_import,
-              new_import,
-              1
+          drive = replace_exact(
+              drive,
+              "import com.yunx.app.ui.viewmodel.DriveQuotaViewModel\n",
+              "import com.yunx.app.ui.viewmodel.DriveLoginState\n"
+              "import com.yunx.app.ui.viewmodel.DriveQuotaViewModel\n",
+              "Import DriveLoginState"
           )
 
-          # 在刷新状态后收集六个平台健康状态
-          old_refresh = '''    val isRefreshing by driveQuotaViewModel.loading.collectAsState()
+          refresh_anchor = (
+              "    val isRefreshing by "
+              "driveQuotaViewModel.loading.collectAsState()\n"
+          )
 
-              // 账号列表 ↔ 夸克云盘 ↔ UC 云盘 ↔ 迅雷云盘 ↔ 百度云盘 ↔ 移动云盘 ↔ 123 云盘：平滑过渡（淡入 + 轻微缩放，不僵硬）
-          '''
-
-          new_refresh = '''    val isRefreshing by driveQuotaViewModel.loading.collectAsState()
+          health_collectors = r'''
 
               val quarkLoginState by
-                  driveQuotaViewModel.quarkLoginState.collectAsState()
+                  driveQuotaViewModel
+                      .quarkLoginState
+                      .collectAsState()
+
               val ucLoginState by
-                  driveQuotaViewModel.ucLoginState.collectAsState()
+                  driveQuotaViewModel
+                      .ucLoginState
+                      .collectAsState()
+
               val xunleiLoginState by
-                  driveQuotaViewModel.xunleiLoginState.collectAsState()
+                  driveQuotaViewModel
+                      .xunleiLoginState
+                      .collectAsState()
+
               val baiduLoginState by
-                  driveQuotaViewModel.baiduLoginState.collectAsState()
+                  driveQuotaViewModel
+                      .baiduLoginState
+                      .collectAsState()
+
               val c139LoginState by
-                  driveQuotaViewModel.c139LoginState.collectAsState()
+                  driveQuotaViewModel
+                      .c139LoginState
+                      .collectAsState()
+
               val pan123LoginState by
-                  driveQuotaViewModel.pan123LoginState.collectAsState()
-
-              // 账号列表 ↔ 夸克云盘 ↔ UC 云盘 ↔ 迅雷云盘 ↔ 百度云盘 ↔ 移动云盘 ↔ 123 云盘：平滑过渡（淡入 + 轻微缩放，不僵硬）
+                  driveQuotaViewModel
+                      .pan123LoginState
+                      .collectAsState()
           '''
 
-          if drive.count(old_refresh) != 1:
-              raise RuntimeError(
-                  "DriveScreen refresh-state insertion point not found"
-              )
-
-          drive = drive.replace(
-              old_refresh,
-              new_refresh,
-              1
+          drive = replace_exact(
+              drive,
+              refresh_anchor,
+              refresh_anchor +
+                  health_collectors,
+              "Collect account health states"
           )
 
-          # 给六张卡片注入 loginState
-          mappings = (
-              (
-                  "quota = driveQuotaViewModel.quarkQuota.collectAsState().value,",
-                  "quota = driveQuotaViewModel.quarkQuota.collectAsState().value,\n"
-                  "                        loginState = quarkLoginState,"
-              ),
-              (
-                  "quota = driveQuotaViewModel.ucQuota.collectAsState().value,",
-                  "quota = driveQuotaViewModel.ucQuota.collectAsState().value,\n"
-                  "                        loginState = ucLoginState,"
-              ),
-              (
-                  "quota = driveQuotaViewModel.xunleiQuota.collectAsState().value,",
-                  "quota = driveQuotaViewModel.xunleiQuota.collectAsState().value,\n"
-                  "                        loginState = xunleiLoginState,"
-              ),
-              (
-                  "quota = driveQuotaViewModel.baiduQuota.collectAsState().value,",
-                  "quota = driveQuotaViewModel.baiduQuota.collectAsState().value,\n"
-                  "                        loginState = baiduLoginState,"
-              ),
-              (
-                  "quota = driveQuotaViewModel.c139Quota.collectAsState().value,",
-                  "quota = driveQuotaViewModel.c139Quota.collectAsState().value,\n"
-                  "                        loginState = c139LoginState,"
-              ),
-              (
-                  "quota = driveQuotaViewModel.pan123Quota.collectAsState().value,",
-                  "quota = driveQuotaViewModel.pan123Quota.collectAsState().value,\n"
-                  "                        loginState = pan123LoginState,"
-              ),
-          )
+          quota_state_pairs = {
+              "quarkQuota": "quarkLoginState",
+              "ucQuota": "ucLoginState",
+              "xunleiQuota": "xunleiLoginState",
+              "baiduQuota": "baiduLoginState",
+              "c139Quota": "c139LoginState",
+              "pan123Quota": "pan123LoginState",
+          }
 
-          for old, new in mappings:
-              if drive.count(old) != 1:
-                  raise RuntimeError(
-                      f"DriveScreen card mapping not found: {old}"
-                  )
-
-              drive = drive.replace(
-                  old,
-                  new,
-                  1
+          for quota_name, state_name in quota_state_pairs.items():
+              pattern = (
+                  rf'(?P<indent>[ \t]*)'
+                  rf'quota\s*=\s*'
+                  rf'driveQuotaViewModel\.'
+                  rf'{quota_name}'
+                  rf'\.collectAsState\(\)\.value,'
               )
 
-          # 扩展 DriveAccountCard 参数
-          old_card_sig = '''private fun DriveAccountCard(
-              account: DriveAccount,
-              /** 网盘空间详情（已登录且有数据时在卡片内显示进度条）；null 不显示 */
-              quota: QuotaInfo? = null,
-              onClick: (() -> Unit)? = null,
-          '''
+              replacement = (
+                  rf'\g<indent>quota = '
+                  rf'driveQuotaViewModel.'
+                  rf'{quota_name}'
+                  rf'.collectAsState().value,\n'
+                  rf'\g<indent>loginState = '
+                  rf'{state_name},'
+              )
 
-          new_card_sig = '''private fun DriveAccountCard(
-              account: DriveAccount,
-              /** 网盘空间详情（已登录且有数据时在卡片内显示进度条）；null 不显示 */
-              quota: QuotaInfo? = null,
+              drive = replace_regex(
+                  drive,
+                  pattern,
+                  replacement,
+                  f"Inject {state_name}"
+              )
+
+          # DriveAccountCard 增加 loginState 参数
+          drive = replace_regex(
+              drive,
+              r'''
+              (private\s+fun\s+DriveAccountCard\(
+              \s*account:\s*DriveAccount,
+              [\s\S]*?
+              \s*quota:\s*QuotaInfo\?\s*=\s*null,)
+              ''',
+              r'''\1
               loginState: DriveLoginState =
                   if (account.isLoggedIn) {
                       DriveLoginState.CHECKING
                   } else {
                       DriveLoginState.LOGGED_OUT
-                  },
-              onClick: (() -> Unit)? = null,
-          '''
-
-          if drive.count(old_card_sig) != 1:
-              raise RuntimeError(
-                  "DriveAccountCard signature not found"
-              )
-
-          drive = drive.replace(
-              old_card_sig,
-              new_card_sig,
-              1
+                  },''',
+              "DriveAccountCard loginState parameter",
+              re.VERBOSE
           )
 
-          old_content_call = '''            quota = quota,
-                  clickable = onClick != null,
-          '''
-
-          new_content_call = '''            quota = quota,
-                  loginState = loginState,
-                  clickable = onClick != null,
-          '''
-
-          if drive.count(old_content_call) != 1:
-              raise RuntimeError(
-                  "DriveAccountCardContent call not found"
+          # 向 DriveAccountCardContent 传递 loginState
+          drive = replace_regex(
+              drive,
+              r'''
+              (
+              DriveAccountCardContent\(
+              \s*account\s*=\s*account,
+              \s*quota\s*=\s*quota,
               )
-
-          drive = drive.replace(
-              old_content_call,
-              new_content_call,
-              1
+              ''',
+              r'''\1
+                  loginState = loginState,''',
+              "Pass loginState to DriveAccountCardContent",
+              re.VERBOSE
           )
 
-          old_content_sig = '''private fun DriveAccountCardContent(
-              account: DriveAccount,
-              quota: QuotaInfo? = null,
-              clickable: Boolean,
-          '''
-
-          new_content_sig = '''private fun DriveAccountCardContent(
-              account: DriveAccount,
-              quota: QuotaInfo? = null,
-              loginState: DriveLoginState,
-              clickable: Boolean,
-          '''
-
-          if drive.count(old_content_sig) != 1:
-              raise RuntimeError(
-                  "DriveAccountCardContent signature not found"
+          # DriveAccountCardContent 增加参数
+          drive = replace_regex(
+              drive,
+              r'''
+              (
+              private\s+fun\s+DriveAccountCardContent\(
+              \s*account:\s*DriveAccount,
+              \s*quota:\s*QuotaInfo\?\s*=\s*null,
               )
-
-          drive = drive.replace(
-              old_content_sig,
-              new_content_sig,
-              1
+              ''',
+              r'''\1
+              loginState: DriveLoginState,''',
+              "DriveAccountCardContent loginState parameter",
+              re.VERBOSE
           )
 
-          # 在账号描述下方增加状态文字
-          old_description = '''            Text(
-                      text = account.description,
-                      style = MaterialTheme.typography.bodyMedium,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                  )
-                  // 已登录且有空间数据：卡片内展示剩余空间进度条（出现时淡入 + 纵向展开，避免突兀）
+          # 在账号描述后加入健康状态
+          description_pattern = r'''
+              (
+              Text\(
+              \s*text\s*=\s*account\.description,
+              \s*style\s*=\s*
+                  MaterialTheme\.typography\.bodyMedium,
+              \s*color\s*=\s*
+                  MaterialTheme\.colorScheme\.onSurfaceVariant
+              \s*\)
+              )
+              (?P<after>
+              \s*//\s*已登录且有空间数据
+              )
           '''
 
-          new_description = '''            Text(
-                      text = account.description,
-                      style = MaterialTheme.typography.bodyMedium,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
+          health_ui = r'''\1
+
+              if (account.isLoggedIn) {
+                  Spacer(
+                      modifier =
+                          Modifier.height(3.dp)
                   )
 
-                  if (account.isLoggedIn) {
-                      Spacer(
-                          modifier = Modifier.height(3.dp)
-                      )
-
-                      val healthText = when (loginState) {
+                  val healthText =
+                      when (loginState) {
                           DriveLoginState.CHECKING ->
                               "● 检测中"
 
@@ -722,35 +803,39 @@ jobs:
                               "● 未登录"
                       }
 
-                      Text(
-                          text = healthText,
-                          style =
-                              MaterialTheme.typography.labelSmall,
-                          color = when (loginState) {
+                  Text(
+                      text = healthText,
+                      style =
+                          MaterialTheme
+                              .typography
+                              .labelSmall,
+                      color =
+                          when (loginState) {
                               DriveLoginState.HEALTHY ->
-                                  MaterialTheme.colorScheme.primary
+                                  MaterialTheme
+                                      .colorScheme
+                                      .primary
 
                               DriveLoginState.SUSPECT ->
-                                  MaterialTheme.colorScheme.error
+                                  MaterialTheme
+                                      .colorScheme
+                                      .error
 
                               else ->
-                                  MaterialTheme.colorScheme.onSurfaceVariant
+                                  MaterialTheme
+                                      .colorScheme
+                                      .onSurfaceVariant
                           }
-                      )
-                  }
+                  )
+              }
+              \g<after>'''
 
-                  // 已登录且有空间数据：卡片内展示剩余空间进度条（出现时淡入 + 纵向展开，避免突兀）
-          '''
-
-          if drive.count(old_description) != 1:
-              raise RuntimeError(
-                  "DriveAccountCard description block not found"
-              )
-
-          drive = drive.replace(
-              old_description,
-              new_description,
-              1
+          drive = replace_regex(
+              drive,
+              description_pattern,
+              health_ui,
+              "Add account health UI",
+              re.VERBOSE
           )
 
           drive_path.write_text(
@@ -760,7 +845,11 @@ jobs:
 
           # ============================================================
           # 4. ResolveScreen：
-          #    查看全部历史 + 搜索 + 单条删除 + 再次解析
+          #    - 查看全部
+          #    - 搜索历史
+          #    - 单条删除
+          #    - 再次解析
+          #    - 清空全部
           # ============================================================
 
           resolve_path = Path(
@@ -772,192 +861,107 @@ jobs:
               encoding="utf-8"
           )
 
-          # 新增图标
-          old_icon_import = '''import androidx.compose.material.icons.outlined.ContentPaste
-          import androidx.compose.material.icons.outlined.ErrorOutline
-          '''
-
-          new_icon_import = '''import androidx.compose.material.icons.outlined.ContentPaste
-          import androidx.compose.material.icons.outlined.Delete
-          import androidx.compose.material.icons.outlined.ErrorOutline
-          import androidx.compose.material.icons.outlined.Search
-          '''
-
-          if resolve.count(old_icon_import) != 1:
-              raise RuntimeError(
-                  "ResolveScreen icon import point not found"
-              )
-
-          resolve = resolve.replace(
-              old_icon_import,
-              new_icon_import,
-              1
+          # heightIn
+          resolve = replace_exact(
+              resolve,
+              "import androidx.compose.foundation.layout.height\n",
+              "import androidx.compose.foundation.layout.height\n"
+              "import androidx.compose.foundation.layout.heightIn\n",
+              "Import heightIn"
           )
 
-          # 历史管理弹窗状态
-          old_recent_state = '''    var recentHistory by remember {
-                  mutableStateOf(
-                      historyRepository.load()
-                  )
-              }
+          # 图标
+          resolve = replace_exact(
+              resolve,
+              "import androidx.compose.material.icons.outlined.ContentPaste\n"
+              "import androidx.compose.material.icons.outlined.ErrorOutline\n",
+              "import androidx.compose.material.icons.outlined.ContentPaste\n"
+              "import androidx.compose.material.icons.outlined.Delete\n"
+              "import androidx.compose.material.icons.outlined.ErrorOutline\n"
+              "import androidx.compose.material.icons.outlined.Search\n",
+              "Import history icons"
+          )
 
-              fun resolveAndRemember(
-          '''
-
-          new_recent_state = '''    var recentHistory by remember {
-                  mutableStateOf(
-                      historyRepository.load()
-                  )
-              }
+          # 历史管理窗口状态
+          resolve = replace_regex(
+              resolve,
+              r'''
+              (
+              var\s+recentHistory\s+by\s+remember\s*\{
+              \s*mutableStateOf\(
+              \s*historyRepository\.load\(\)
+              \s*\)
+              \s*\}
+              )
+              ''',
+              r'''\1
 
               var showHistoryManager by remember {
                   mutableStateOf(false)
-              }
-
-              fun resolveAndRemember(
-          '''
-
-          if resolve.count(old_recent_state) != 1:
-              raise RuntimeError(
-                  "Resolve history state insertion point not found"
-              )
-
-          resolve = resolve.replace(
-              old_recent_state,
-              new_recent_state,
-              1
+              }''',
+              "Add history manager state",
+              re.VERBOSE
           )
 
-          # 给 ResolveInputContent 传入“查看全部”
-          old_clear_call = '''                        onClearHistory = {
-                              historyRepository.clear()
-
-                              recentHistory =
-                                  emptyList()
-                          }
-                      )
-          '''
-
-          new_clear_call = '''                        onShowAllHistory = {
+          # ResolveInputContent 调用处增加 onShowAllHistory
+          resolve = replace_regex(
+              resolve,
+              r'''
+              (
+              \s*onClearHistory\s*=\s*\{
+              \s*historyRepository\.clear\(\)
+              )
+              ''',
+              r'''
+                          onShowAllHistory = {
                               showHistoryManager = true
                           },
 
-                          onClearHistory = {
-                              historyRepository.clear()
-
-                              recentHistory =
-                                  emptyList()
-                          }
-                      )
-          '''
-
-          if resolve.count(old_clear_call) != 1:
-              raise RuntimeError(
-                  "ResolveInputContent clear-history call not found"
-              )
-
-          resolve = resolve.replace(
-              old_clear_call,
-              new_clear_call,
-              1
+              \1''',
+              "Pass onShowAllHistory",
+              re.VERBOSE
           )
 
-          # 在下载弹窗之前加入历史管理弹窗
-          marker = '''    // -----------------------------
-              // 获取下载链接加载弹窗
-              // -----------------------------
-          '''
-
-          history_dialog_call = '''    if (showHistoryManager) {
-                  HistoryManagerDialog(
-                      items = recentHistory,
-                      onSelect = { item ->
-                          showHistoryManager = false
-
-                          link = item.link
-                          pwd = item.password
-                          pwdEdited = true
-
-                          resolveAndRemember(
-                              item.link,
-                              item.password.ifBlank {
-                                  null
-                              }
-                          )
-                      },
-                      onDelete = { item ->
-                          recentHistory =
-                              historyRepository.remove(item)
-                      },
-                      onClearAll = {
-                          historyRepository.clear()
-                          recentHistory = emptyList()
-                          showHistoryManager = false
-                      },
-                      onDismiss = {
-                          showHistoryManager = false
-                      }
-                  )
-              }
-
-              // -----------------------------
-              // 获取下载链接加载弹窗
-              // -----------------------------
-          '''
-
-          if resolve.count(marker) != 1:
-              raise RuntimeError(
-                  "ResolveScreen history dialog insertion marker not found"
+          # 函数参数增加 onShowAllHistory
+          resolve = replace_regex(
+              resolve,
+              r'''
+              (
+              onHistorySelect:\s*\(
+              \s*ResolveHistoryItem
+              \s*\)\s*->\s*Unit,
               )
-
-          resolve = resolve.replace(
-              marker,
-              history_dialog_call,
-              1
-          )
-
-          # ResolveInputContent 增加参数
-          old_params = '''    onHistorySelect: (
-                  ResolveHistoryItem
-              ) -> Unit,
-
-              onClearHistory: () -> Unit
-          ) {
-          '''
-
-          new_params = '''    onHistorySelect: (
-                  ResolveHistoryItem
-              ) -> Unit,
+              (
+              \s*onClearHistory:\s*\(\)\s*->\s*Unit
+              )
+              ''',
+              r'''\1
 
               onShowAllHistory: () -> Unit,
-
-              onClearHistory: () -> Unit
-          ) {
-          '''
-
-          if resolve.count(old_params) != 1:
-              raise RuntimeError(
-                  "ResolveInputContent history params not found"
-              )
-
-          resolve = resolve.replace(
-              old_params,
-              new_params,
-              1
+              \2''',
+              "ResolveInputContent onShowAllHistory parameter",
+              re.VERBOSE
           )
 
-          # 最近解析标题行：加入“查看全部”
-          old_header_buttons = '''                TextButton(
-                          onClick =
-                              onClearHistory
-                      ) {
-                          Text(
-                              "清空"
-                          )
-                      }
+          # “最近解析”右侧增加查看全部
+          clear_button = r'''
+              (
+              \s*TextButton\(
+              \s*onClick\s*=
+              \s*onClearHistory
+              \s*\)\s*\{
+              \s*Text\(
+              \s*"清空"
+              \s*\)
+              \s*\}
+              )
           '''
 
-          new_header_buttons = '''                TextButton(
+          resolve = replace_regex(
+              resolve,
+              clear_button,
+              r'''
+                      TextButton(
                           onClick =
                               onShowAllHistory
                       ) {
@@ -966,60 +970,99 @@ jobs:
                           )
                       }
 
-                      TextButton(
-                          onClick =
-                              onClearHistory
-                      ) {
-                          Text(
-                              "清空"
-                          )
-                      }
-          '''
-
-          if resolve.count(old_header_buttons) != 1:
-              raise RuntimeError(
-                  "Recent history header buttons not found"
-              )
-
-          resolve = resolve.replace(
-              old_header_buttons,
-              new_header_buttons,
-              1
+              \1''',
+              "Add View All history button",
+              re.VERBOSE
           )
 
-          # 删除“仅显示最近3条...”提示，查看全部按钮已能承担入口
-          old_hint = '''                if (
-                      recentHistory.size > 3
-                  ) {
-                      Text(
-                          text =
-                              "仅显示最近 3 条，共 ${recentHistory.size} 条记录",
+          # 删除旧的“仅显示最近3条”文字
+          resolve = replace_regex(
+              resolve,
+              r'''
+              \s*if\s*\(
+              \s*recentHistory\.size\s*>\s*3
+              \s*\)\s*\{
+              \s*Text\(
+              \s*text\s*=
+              \s*"仅显示最近\s+3\s+条，共\s+\$\{recentHistory\.size\}\s+条记录",
+              [\s\S]*?
+              \s*\)
+              \s*\}
+              ''',
+              "\n",
+              "Remove old recent-history hint",
+              re.VERBOSE
+          )
 
-                          style =
-                              MaterialTheme
-                                  .typography
-                                  .bodySmall,
+          # 在获取下载链接弹窗之前挂载历史管理窗口
+          load_dialog_marker = r'''
+              // -----------------------------
+              // 获取下载链接加载弹窗
+              // -----------------------------
+          '''
 
-                          color =
-                              MaterialTheme
-                                  .colorScheme
-                                  .onSurfaceVariant
+          history_manager_call = r'''    if (showHistoryManager) {
+              HistoryManagerDialog(
+                  items = recentHistory,
+
+                  onSelect = { item ->
+                      showHistoryManager =
+                          false
+
+                      link =
+                          item.link
+
+                      pwd =
+                          item.password
+
+                      pwdEdited =
+                          true
+
+                      resolveAndRemember(
+                          item.link,
+                          item.password.ifBlank {
+                              null
+                          }
                       )
+                  },
+
+                  onDelete = { item ->
+                      recentHistory =
+                          historyRepository.remove(
+                              item
+                          )
+                  },
+
+                  onClearAll = {
+                      historyRepository.clear()
+
+                      recentHistory =
+                          emptyList()
+
+                      showHistoryManager =
+                          false
+                  },
+
+                  onDismiss = {
+                      showHistoryManager =
+                          false
                   }
+              )
+          }
+
+              // -----------------------------
+              // 获取下载链接加载弹窗
+              // -----------------------------
           '''
 
-          if resolve.count(old_hint) != 1:
-              raise RuntimeError(
-                  "Recent-history count hint not found"
-              )
-
-          resolve = resolve.replace(
-              old_hint,
-              "",
-              1
+          resolve = replace_exact(
+              resolve,
+              load_dialog_marker,
+              history_manager_call,
+              "Mount history manager dialog"
           )
 
-          # 在 LoadingContent 前插入完整历史管理弹窗
+          # 在 LoadingContent 前插入完整历史管理 UI
           loading_marker = '''/**
            * 全屏加载
            */
@@ -1027,7 +1070,10 @@ jobs:
           private fun LoadingContent() {
           '''
 
-          history_dialog = '''@Composable
+          history_dialog_code = r'''/**
+           * 完整解析历史管理。
+           */
+          @Composable
           private fun HistoryManagerDialog(
               items: List<ResolveHistoryItem>,
               onSelect: (ResolveHistoryItem) -> Unit,
@@ -1039,34 +1085,37 @@ jobs:
                   mutableStateOf("")
               }
 
-              val filtered = remember(
-                  items,
-                  query
-              ) {
-                  val keyword = query.trim()
+              val filtered =
+                  remember(
+                      items,
+                      query
+                  ) {
+                      val keyword =
+                          query.trim()
 
-                  if (keyword.isBlank()) {
-                      items
-                  } else {
-                      items.filter { item ->
-                          item.platformName.contains(
-                              keyword,
-                              ignoreCase = true
-                          ) ||
-                              item.link.contains(
+                      if (keyword.isBlank()) {
+                          items
+                      } else {
+                          items.filter { item ->
+                              item.platformName.contains(
                                   keyword,
                                   ignoreCase = true
                               ) ||
-                              item.shareId.contains(
-                                  keyword,
-                                  ignoreCase = true
-                              )
+                                  item.link.contains(
+                                      keyword,
+                                      ignoreCase = true
+                                  ) ||
+                                  item.shareId.contains(
+                                      keyword,
+                                      ignoreCase = true
+                                  )
+                          }
                       }
                   }
-              }
 
               AlertDialog(
-                  onDismissRequest = onDismiss,
+                  onDismissRequest =
+                      onDismiss,
 
                   title = {
                       Text(
@@ -1084,7 +1133,8 @@ jobs:
                                   )
                       ) {
                           OutlinedTextField(
-                              value = query,
+                              value =
+                                  query,
 
                               onValueChange = {
                                   query = it
@@ -1109,7 +1159,8 @@ jobs:
                                   )
                               },
 
-                              singleLine = true,
+                              singleLine =
+                                  true,
 
                               shape =
                                   MaterialTheme
@@ -1119,13 +1170,19 @@ jobs:
 
                           Spacer(
                               modifier =
-                                  Modifier.height(12.dp)
+                                  Modifier.height(
+                                      12.dp
+                                  )
                           )
 
-                          if (filtered.isEmpty()) {
+                          if (
+                              filtered.isEmpty()
+                          ) {
                               Text(
                                   text =
-                                      if (items.isEmpty()) {
+                                      if (
+                                          items.isEmpty()
+                                      ) {
                                           "暂无解析历史"
                                       } else {
                                           "没有找到匹配的记录"
@@ -1135,7 +1192,8 @@ jobs:
                                       Modifier
                                           .fillMaxWidth()
                                           .padding(
-                                              vertical = 24.dp
+                                              vertical =
+                                                  24.dp
                                           ),
 
                                   style =
@@ -1193,12 +1251,15 @@ jobs:
                                                       ),
 
                                               verticalAlignment =
-                                                  Alignment.CenterVertically
+                                                  Alignment
+                                                      .CenterVertically
                                           ) {
                                               Column(
                                                   modifier =
                                                       Modifier
-                                                          .weight(1f)
+                                                          .weight(
+                                                              1f
+                                                          )
                                               ) {
                                                   Text(
                                                       text =
@@ -1229,17 +1290,20 @@ jobs:
                                                       fontWeight =
                                                           FontWeight.Medium,
 
-                                                      maxLines = 1,
+                                                      maxLines =
+                                                          1,
 
                                                       overflow =
-                                                          TextOverflow.Ellipsis
+                                                          TextOverflow
+                                                              .Ellipsis
                                                   )
 
                                                   Spacer(
                                                       modifier =
-                                                          Modifier.height(
-                                                              3.dp
-                                                          )
+                                                          Modifier
+                                                              .height(
+                                                                  3.dp
+                                                              )
                                                   )
 
                                                   Text(
@@ -1256,10 +1320,12 @@ jobs:
                                                               .colorScheme
                                                               .onSurfaceVariant,
 
-                                                      maxLines = 1,
+                                                      maxLines =
+                                                          1,
 
                                                       overflow =
-                                                          TextOverflow.Ellipsis
+                                                          TextOverflow
+                                                              .Ellipsis
                                                   )
                                               }
 
@@ -1272,7 +1338,8 @@ jobs:
                                               ) {
                                                   Icon(
                                                       imageVector =
-                                                          Icons.Outlined.Delete,
+                                                          Icons.Outlined
+                                                              .Delete,
 
                                                       contentDescription =
                                                           "删除历史",
@@ -1293,7 +1360,8 @@ jobs:
 
                   confirmButton = {
                       TextButton(
-                          onClick = onDismiss
+                          onClick =
+                              onDismiss
                       ) {
                           Text(
                               "关闭"
@@ -1302,7 +1370,9 @@ jobs:
                   },
 
                   dismissButton = {
-                      if (items.isNotEmpty()) {
+                      if (
+                          items.isNotEmpty()
+                      ) {
                           TextButton(
                               onClick =
                                   onClearAll
@@ -1329,21 +1399,60 @@ jobs:
           private fun LoadingContent() {
           '''
 
-          if resolve.count(loading_marker) != 1:
-              raise RuntimeError(
-                  "HistoryManagerDialog insertion point not found"
-              )
-
-          resolve = resolve.replace(
+          resolve = replace_exact(
+              resolve,
               loading_marker,
-              history_dialog,
-              1
+              history_dialog_code,
+              "Add HistoryManagerDialog"
           )
 
           resolve_path.write_text(
               resolve,
               encoding="utf-8"
           )
+
+          # ============================================================
+          # 5. 自检
+          # ============================================================
+
+          checks = {
+              history_path: [
+                  "fun remove(",
+                  "const val MAX_HISTORY =\n            30",
+              ],
+
+              quota_path: [
+                  "enum class DriveLoginState",
+                  "DriveLoginState.HEALTHY",
+                  "DriveLoginState.SUSPECT",
+              ],
+
+              drive_path: [
+                  "loginState = quarkLoginState",
+                  "loginState = pan123LoginState",
+                  "● 状态正常",
+                  "● 登录可能已失效",
+              ],
+
+              resolve_path: [
+                  "HistoryManagerDialog(",
+                  "\"查看全部\"",
+                  "\"清空全部\"",
+                  "historyRepository.remove(",
+              ],
+          }
+
+          for path, needles in checks.items():
+              text = path.read_text(
+                  encoding="utf-8"
+              )
+
+              for needle in needles:
+                  if needle not in text:
+                      raise RuntimeError(
+                          f"Self-check failed: "
+                          f"{needle!r} not found in {path}"
+                      )
 
           print(
               "Second-batch source changes applied successfully."
@@ -1354,9 +1463,13 @@ jobs:
         shell: bash
         run: |
           git status --short
+
           echo
+          echo "----- DIFF STAT -----"
           git diff --stat
+
           echo
+          echo "----- DIFF CHECK -----"
           git diff --check
 
       - name: Set up Java 17
@@ -1383,9 +1496,13 @@ jobs:
       - name: Configure debug build
         shell: bash
         run: |
-          sed -i '/aapt2FromMavenOverride/d' gradle.properties
+          sed -i \
+            '/aapt2FromMavenOverride/d' \
+            gradle.properties
 
-          printf 'sdk.dir=%s\n' "$ANDROID_HOME" \
+          printf \
+            'sdk.dir=%s\n' \
+            "$ANDROID_HOME" \
             > local.properties
 
           chmod +x gradlew
@@ -1426,10 +1543,12 @@ jobs:
       - name: Commit verified changes
         shell: bash
         run: |
-          git config user.name \
+          git config \
+            user.name \
             "github-actions[bot]"
 
-          git config user.email \
+          git config \
+            user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
@@ -1442,4 +1561,6 @@ jobs:
           git commit \
             -m "feat: add account health and history management"
 
-          git push origin HEAD:main
+          git push \
+            origin \
+            HEAD:main
