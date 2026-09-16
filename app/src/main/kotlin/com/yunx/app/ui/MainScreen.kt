@@ -22,7 +22,7 @@ import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -131,7 +131,7 @@ import com.yunx.app.data.network.HttpClients
 
 /**
  * 主页框架：
- * - 顶部可折叠大标题（LargeTopAppBar），切换 Tab 时标题文字随 Tab 变化，折叠状态不受影响；
+ * - 主页面统一使用紧凑 TopAppBar，标题高度与二级页面保持一致；
  * - 导航 Tab（解析 / 网盘 / 下载 / 设置）：竖屏为底部导航栏（NavigationBar），横屏切换为侧边导航栏（NavigationRail）；
  * - 通过 SaveableStateHolder 保存各页面状态，切换 Tab 再切回来不会重置；
  * - 夸克登录页全屏覆盖展示。
@@ -553,24 +553,23 @@ fun MainScreen() {
         return
     }
 
-    // 折叠标题状态提升到本层：跨页面共享，页面切换时折叠/展开状态保持不变
-    // 用 exitUntilCollapsed（默认实现，含松手吸附）：滚动时标题先收起再滚内容；
-    // 向上滚动回顶部过程中标题保持收起，只有列表到达最顶部后继续下拉（overscroll）才重新展开
+    // 统一顶部栏：固定紧凑高度，不再使用可折叠大标题。
+    // 保留 scrollBehavior，兼容各页面现有滚动实现。
     val topAppBarState = rememberTopAppBarState()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(topAppBarState)
 
     // 全局 Snackbar 宿主（Material3，替换原 Toast 提示）
     val snackbarHostState = rememberGlobalSnackbarHostState()
 
     // 主框架与全屏覆盖层（关于页）放在同一 Box：覆盖层带过渡动画
     Box(modifier = Modifier.fillMaxSize()) {
-    // 顶部可折叠大标题（竖屏 / 横屏共用）
+    // 统一紧凑顶部栏（竖屏 / 横屏共用）
     val topBarContent: @Composable () -> Unit = {
-        LargeTopAppBar(
+        TopAppBar(
             title = {
                 Text(
                     text = currentTab.title,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold
                 )
             },
@@ -583,7 +582,7 @@ fun MainScreen() {
                 }
             },
             scrollBehavior = scrollBehavior,
-            colors = TopAppBarDefaults.largeTopAppBarColors(
+            colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = MaterialTheme.colorScheme.surface,
                 scrolledContainerColor = MaterialTheme.colorScheme.surface
             )
