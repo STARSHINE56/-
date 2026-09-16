@@ -17,7 +17,7 @@ jobs:
   test:
     name: Test and build debug APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Check out source
@@ -47,9 +47,14 @@ jobs:
       - name: Configure debug build
         shell: bash
         run: |
-          sed -i '/aapt2FromMavenOverride/d' gradle.properties
+          sed -i \
+            '/aapt2FromMavenOverride/d' \
+            gradle.properties
 
-          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          printf \
+            'sdk.dir=%s\n' \
+            "$ANDROID_HOME" \
+            > local.properties
 
           chmod +x gradlew
 
@@ -61,6 +66,15 @@ jobs:
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             testDebugUnitTest
+
+      - name: Run Android Lint
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            lintDebug
 
       - name: Build debug APK
         shell: bash
@@ -78,6 +92,7 @@ jobs:
 
           test -f "$APK"
 
+          echo "APK build successful:"
           ls -lh "$APK"
 
       - name: Upload debug APK
