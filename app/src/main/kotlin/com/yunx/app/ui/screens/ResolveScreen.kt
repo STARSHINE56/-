@@ -81,6 +81,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.yunx.app.data.network.ShareLinkParser
 import com.yunx.app.data.network.SharePlatform
+import com.yunx.app.data.prefs.ResolveHistoryItem
+import com.yunx.app.data.prefs.ResolveHistoryRepository
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.resolve.DownloadLinkDialog
 import com.yunx.app.ui.resolve.ShareDetailScreen
@@ -119,6 +121,40 @@ fun ResolveScreen(
     val downloadLink = viewModel.downloadLink
     val downloadError = viewModel.downloadError
     val context = LocalContext.current
+
+    // 最近解析记录，仅保存在本机。
+    val historyRepository = remember {
+        ResolveHistoryRepository(
+            context.applicationContext
+        )
+    }
+
+    var recentHistory by remember {
+        mutableStateOf(
+            historyRepository.load()
+        )
+    }
+
+    fun resolveAndRemember(
+        rawLink: String,
+        password: String?
+    ) {
+        val parsed =
+            ShareLinkParser.parse(rawLink)
+
+        if (parsed != null) {
+            recentHistory =
+                historyRepository.add(
+                    rawLink,
+                    password ?: parsed.pwd
+                )
+        }
+
+        viewModel.startResolve(
+            rawLink,
+            password
+        )
+    }
 
     // 详情页文件列表滚动状态（提升到 AnimatedContent 外层：进入文件夹/返回时列表重建，
     // 若放在 ShareDetailScreen 内会随目录切换丢失，导致返回后列表回到顶部）
@@ -246,8 +282,31 @@ fun ResolveScreen(
                         pwd = ""
                         pwdEdited = false
                     },
-                    onClearPwd = { pwd = "" }
-                )
+                    onClearPwd = { pwd = "" },
+          recentHistory = recentHistory,
+          onStartResolve = { rawLink, password ->
+              resolveAndRemember(
+                  rawLink,
+                  password
+              )
+          },
+          onHistorySelect = { item ->
+              link = item.link
+              pwd = item.password
+              pwdEdited = true
+
+              resolveAndRemember(
+                  item.link,
+                  item.password.ifBlank {
+                      null
+                  }
+              )
+          },
+          onClearHistory = {
+              historyRepository.clear()
+              recentHistory = emptyList()
+          }
+      )
             }
         }
 
@@ -279,7 +338,7 @@ fun ResolveScreen(
                         pwd = parsed?.pwd.orEmpty()
                         pwdEdited = true
                         clipboardSuggestion = null
-                        viewModel.startResolve(suggestion, parsed?.pwd)
+                        resolveAndRemember(suggestion, parsed?.pwd)
                     },
                     onDismiss = {
                         ignoredClipboard = suggestion
@@ -333,7 +392,11 @@ private fun ResolveInputContent(
     pwd: String,
     onPwdChange: (String) -> Unit,
     onClearLink: () -> Unit,
-    onClearPwd: () -> Unit
+    onClearPwd: () -> Unit,
+    recentHistory: List<ResolveHistoryItem>,
+    onStartResolve: (String, String?) -> Unit,
+    onHistorySelect: (ResolveHistoryItem) -> Unit,
+    onClearHistory: () -> Unit
 ) {
     val isLoading = state is ResolveUiState.Loading
 
@@ -387,7 +450,12 @@ private fun ResolveInputContent(
         )
 
         Button(
-            onClick = { viewModel.startResolve(link, pwd) },
+            onClick = {
+            onStartResolve(
+                link,
+                pwd.ifBlank { null }
+            )
+        },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
@@ -404,6 +472,105 @@ private fun ResolveInputContent(
                 Text("开始解析")
             }
         }
+
+        if (recentHistory.isNotEmpty()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor =
+                MaterialTheme.colorScheme.surfaceContainerLow
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(
+                12.dp
+            ),
+            verticalArrangement =
+                Arrangement.spacedBy(
+                    4.dp
+                )
+        ) {
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "最近解析",
+                    modifier =
+                        Modifier.weight(1f),
+                    style =
+                        MaterialTheme.typography.titleSmall
+                )
+
+                TextButton(
+                    onClick =
+                        onClearHistory
+                ) {
+                    Text("清空")
+                }
+            }
+
+            recentHistory.forEach {
+                item ->
+
+                TextButton(
+                    onClick = {
+                        onHistorySelect(
+                            item
+                        )
+                    },
+                    modifier =
+                        Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier =
+                            Modifier.fillMaxWidth(),
+                        horizontalAlignment =
+                            Alignment.Start
+                    ) {
+                        Text(
+                            text =
+                                buildString {
+                                    append(
+                                        item.platformName
+                                    )
+
+                                    if (
+                                        item.password
+                                            .isNotBlank()
+                                    ) {
+                                        append(
+                                            " · 提取码 "
+                                        )
+
+                                        append(
+                                            item.password
+                                        )
+                                    }
+                                },
+                            style =
+                                MaterialTheme.typography.labelMedium,
+                            color =
+                                MaterialTheme.colorScheme.primary
+                        )
+
+                        Text(
+                            text =
+                                item.link,
+                            style =
+                                MaterialTheme.typography.bodySmall,
+                            color =
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
         if (state is ResolveUiState.Error) {
             Card(

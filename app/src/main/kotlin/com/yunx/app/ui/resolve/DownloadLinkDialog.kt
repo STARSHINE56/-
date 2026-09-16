@@ -24,6 +24,7 @@ import android.content.Context
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -105,12 +106,29 @@ fun DownloadLinkDialog(
                         modifier = Modifier
                             .padding(12.dp)
                             .combinedClickable(
-                                onClick = {},
-                                onLongClick = {
-                                    copyToClipboard(context, link.downloadUrl)
-                                    SnackbarController.show("下载链接已复制")
-                                }
-                            ),
+                        onClick = {
+                            copyToClipboard(
+                                context,
+                                "download_url",
+                                link.downloadUrl
+                            )
+
+                            SnackbarController.show(
+                                "下载直链已复制"
+                            )
+                        },
+                        onLongClick = {
+                            copyToClipboard(
+                                context,
+                                "download_url",
+                                link.downloadUrl
+                            )
+
+                            SnackbarController.show(
+                                "下载直链已复制"
+                            )
+                        }
+                    ),
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
@@ -121,6 +139,64 @@ fun DownloadLinkDialog(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                Row(
+            modifier =
+                Modifier.fillMaxWidth(),
+            horizontalArrangement =
+                Arrangement.End
+        ) {
+            TextButton(
+                onClick = {
+                    copyToClipboard(
+                        context,
+                        "download_url",
+                        link.downloadUrl
+                    )
+
+                    SnackbarController.show(
+                        "下载直链已复制"
+                    )
+                }
+            ) {
+                Text("复制直链")
+            }
+
+            TextButton(
+                onClick = {
+                    val info =
+                        buildString {
+                            appendLine(
+                                "文件名：${link.filename}"
+                            )
+
+                            appendLine(
+                                "文件大小：${
+                                    formatFileSize(
+                                        link.size
+                                    )
+                                }"
+                            )
+
+                            append(
+                                "下载直链：${link.downloadUrl}"
+                            )
+                        }
+
+                    copyToClipboard(
+                        context,
+                        "file_info",
+                        info
+                    )
+
+                    SnackbarController.show(
+                        "文件信息已复制"
+                    )
+                }
+            ) {
+                Text("复制文件信息")
+            }
+        }
+
                 Text(
                     text = "点击「开始下载」将分片多线程下载并保存到 Download 目录",
                     style = MaterialTheme.typography.labelMedium,
@@ -152,7 +228,60 @@ fun DownloadLinkDialog(
     )
 }
 
-private fun copyToClipboard(context: Context, text: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("download_url", text))
+private fun copyToClipboard(
+    context: Context,
+    label: String,
+    text: String
+) {
+    val clipboard =
+        context.getSystemService(
+            Context.CLIPBOARD_SERVICE
+        ) as ClipboardManager
+
+    clipboard.setPrimaryClip(
+        ClipData.newPlainText(
+            label,
+            text
+        )
+    )
+}
+
+private fun formatFileSize(
+    bytes: Long
+): String {
+    if (bytes <= 0L) {
+        return "未知"
+    }
+
+    val units = arrayOf(
+        "B",
+        "KB",
+        "MB",
+        "GB",
+        "TB"
+    )
+
+    var value =
+        bytes.toDouble()
+
+    var unit = 0
+
+    while (
+        value >= 1024.0 &&
+        unit < units.lastIndex
+    ) {
+        value /= 1024.0
+        unit++
+    }
+
+    return if (unit == 0) {
+        "$bytes ${units[unit]}"
+    } else {
+        String.format(
+            java.util.Locale.US,
+            "%.2f %s",
+            value,
+            units[unit]
+        )
+    }
 }
