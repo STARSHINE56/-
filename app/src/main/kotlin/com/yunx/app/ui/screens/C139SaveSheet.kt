@@ -52,7 +52,7 @@ import com.yunx.app.ui.viewmodel.C139CloudViewModel
 import com.yunx.app.ui.viewmodel.ResolveViewModel
 
 /**
- * 转存到 139 网盘弹窗：浏览 139 个人网盘目录（只进文件夹），确认后转存到当前目录。
+ * 转存到 移动云盘弹窗：浏览 139 个人网盘目录（只进文件夹），确认后转存到当前目录。
  * 复用 C139CloudViewModel 做目录浏览（与网盘页同一实例）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,7 +110,7 @@ fun C139SaveSheet(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "转存到139网盘",
+                        text = "转存到移动云盘",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium
                     )

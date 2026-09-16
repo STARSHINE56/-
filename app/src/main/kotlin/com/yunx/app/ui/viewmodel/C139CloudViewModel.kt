@@ -41,7 +41,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
-/** 139 网盘云盘浏览 UI 状态 */
+/** 移动云盘云盘浏览 UI 状态 */
 sealed interface C139CloudUiState {
     data object Loading : C139CloudUiState
     data class Loaded(
@@ -54,7 +54,7 @@ sealed interface C139CloudUiState {
 }
 
 /**
- * 139 网盘（和彩云）云盘浏览 ViewModel（参考百度/夸克云盘）：
+ * 移动云盘（和彩云）云盘浏览 ViewModel（参考百度/夸克云盘）：
  * - 目录浏览（根/子目录/面包屑回退）+ 下拉刷新
  * - 文件操作：下载 / 重命名 / 移动 / 创建分享 / 删除 + 长按多选批量
  * 认证走 Cookie（内部提取 authorization），目录用 fileId（根"/"），文件标识 fileId。
@@ -111,7 +111,7 @@ class C139CloudViewModel(
     }
 
     private suspend fun cookie(): String =
-        cookieProvider() ?: throw IllegalStateException("请先登录139网盘")
+        cookieProvider() ?: throw IllegalStateException("请先登录移动云盘")
 
     // ---------- 目录浏览 ----------
 

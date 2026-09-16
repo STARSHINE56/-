@@ -4,7 +4,7 @@ import android.util.Base64
 import java.nio.charset.StandardCharsets
 
 /**
- * 139 网盘（中国移动·和彩云）登录常量（依据《139网盘解析方法-alist逆向.md》§3.5）。
+ * 移动云盘（中国移动·和彩云）登录常量（依据《移动云盘解析方法-alist逆向.md》§3.5）。
  * 登录方案：WebView 加载 yun.139.com（PC UA）由用户手动登录，再提取 Cookie 持久化。
  * 登录态两种形式（都支持）：
  *  - A：mail.10086.cn 的 Os_SSo_Sid + RMKEY（alist fast login 路径，§3.4/§3.5.3）；
@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets
 object C139Constants {
 
     /**
-     * WebView 登录页：139 云盘主站（网盘账号，手机号登录）。
+     * WebView 登录页：移动云盘主站（网盘账号，手机号登录）。
      * 用手机 UA 加载（139 移动版页面渲染稳定）；PC 版 SPA 在 WebView 环境会因深度环境检测（navigator.plugins/
      * window.chrome 等特征缺失）而 JS 渲染空白，故不用 PC UA 直连。
      */
@@ -45,7 +45,7 @@ object C139Constants {
     /** 个人网盘管理 host（明文 JSON + Authorization + mcloud-sign） */
     const val CLOUD_BASE = "https://personal-kd-njs.yun.139.com"
 
-    // —— 渠道/上下文头（《139网盘管理认证失败修复》：缺失 → 04000005 认证失败；值来自成功抓包写死）——
+    // —— 渠道/上下文头（《移动云盘管理认证失败修复》：缺失 → 04000005 认证失败；值来自成功抓包写死）——
 
     /** 渠道 source / app-channel / huawei-channelSrc（三者同值） */
     const val YUN_CHANNEL_SOURCE = "10000034"

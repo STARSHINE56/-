@@ -44,7 +44,7 @@ import java.io.ByteArrayInputStream
 import java.util.zip.GZIPInputStream
 
 /**
- * 139 网盘 API 封装（OkHttp）。
+ * 移动云盘 API 封装（OkHttp）。
  * 登录态：cookie（含账号信息，authorization 可选）。
  * 分享解析（§15，7.13+）：share-kd-njs.yun.139.com
  *   - 列目录 getOutLinkInfoV6（pCaID:"root"/父coID，passwd 提取码）
@@ -649,7 +649,7 @@ class C139Api(
     /**
      * 个人网盘管理专用 POST（§1：明文 JSON，Authorization + mcloud-sign 按明文算；
      * 不需要 hcy-cool-flag，不需要加密；可选 Cookie + mcloud-skey（创建分享 getOutLink 必需））。
-     * ⚠️ 修复（《139网盘管理认证失败修复》）：APISIX 网关鉴权层强制要求全套 x-yun-* / mcloud-* 渠道头，
+     * ⚠️ 修复（《移动云盘管理认证失败修复》）：APISIX 网关鉴权层强制要求全套 x-yun-* / mcloud-* 渠道头，
      *    仅有 Authorization+mcloud-sign 会返回 HTTP 404 + code:"04000005" 认证失败。
      */
     private fun cloudPost(

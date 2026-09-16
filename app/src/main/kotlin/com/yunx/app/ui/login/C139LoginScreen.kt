@@ -63,7 +63,7 @@ import kotlinx.coroutines.launch
 private const val TAG = "C139Login"
 
 /**
- * 139 网盘（和彩云）登录页：
+ * 移动云盘（和彩云）登录页：
  * - WebView 加载 yun.139.com，由用户手动登录（短信/验证码/风控由官网处理）；
  * - 右上角「保存」从 CookieManager 提取 mail.10086.cn / yun.139.com 的 Cookie（需含 Os_SSo_Sid + RMKEY）；
  * - 支持手动粘贴 Cookie（需含 Os_SSo_Sid= 与 RMKEY=）。
@@ -98,7 +98,7 @@ fun C139LoginScreen(
             settings.loadWithOverviewMode = true
             settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.NARROW_COLUMNS
             setInitialScale(0)
-            // 139 网盘用手机 UA（移动版页面在 WebView 渲染稳定；PC 版 SPA 会因环境检测白屏）
+            // 移动云盘用手机 UA（移动版页面在 WebView 渲染稳定；PC 版 SPA 会因环境检测白屏）
             settings.userAgentString = WebSettings.getDefaultUserAgent(context)
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -166,7 +166,7 @@ fun C139LoginScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("139网盘登录", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("移动云盘登录", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = { if (!isSaving && !isSavingManual) onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -242,7 +242,7 @@ fun C139LoginScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "1. 在下方网页中登录 139 网盘账号（手机号）",
+                        text = "1. 在下方网页中登录 移动云盘账号（手机号）",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(

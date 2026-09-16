@@ -135,7 +135,7 @@ fun ShareDetailScreen(
     xunleiCloudViewModel: XunleiCloudViewModel,
     /** 百度网盘云盘浏览 ViewModel（百度分享转存目录选择用） */
     baiduCloudViewModel: BaiduCloudViewModel,
-    /** 139 网盘云盘浏览 ViewModel（139 分享转存目录选择用） */
+    /** 移动云盘云盘浏览 ViewModel（139 分享转存目录选择用） */
     c139CloudViewModel: C139CloudViewModel,
     /** UC 网盘云盘浏览 ViewModel（UC 分享转存目录选择用） */
     ucCloudViewModel: UCCoudViewModel,

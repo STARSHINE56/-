@@ -102,7 +102,7 @@ fun DriveScreen(
     xunleiCloudViewModel: XunleiCloudViewModel,
     /** 百度网盘云盘浏览 ViewModel */
     baiduCloudViewModel: BaiduCloudViewModel,
-    /** 139 网盘云盘浏览 ViewModel */
+    /** 移动云盘云盘浏览 ViewModel */
     c139CloudViewModel: C139CloudViewModel,
     /** 123 云盘浏览 ViewModel */
     pan123CloudViewModel: Pan123CloudViewModel,
@@ -138,7 +138,7 @@ fun DriveScreen(
     var showXunleiCloud by rememberSaveable { mutableStateOf(false) }
     // 百度网盘云盘浏览：网盘 Tab 内切换（非全屏）
     var showBaiduCloud by rememberSaveable { mutableStateOf(false) }
-    // 139 网盘云盘浏览：网盘 Tab 内切换（非全屏）
+    // 移动云盘云盘浏览：网盘 Tab 内切换（非全屏）
     var showC139Cloud by rememberSaveable { mutableStateOf(false) }
     // 123 云盘浏览：网盘 Tab 内切换（非全屏）
     var showPan123Cloud by rememberSaveable { mutableStateOf(false) }
@@ -174,7 +174,7 @@ fun DriveScreen(
     )
     val c139 = DriveAccount(
         id = "c139",
-        name = "139网盘",
+        name = "移动云盘",
         description = c139Account?.nickname ?: "点击登录，支持解析下载",
         avatarText = "139",
         isLoggedIn = c139Account != null
@@ -197,7 +197,7 @@ fun DriveScreen(
     // 下拉刷新状态：绑定空间配额加载中状态
     val isRefreshing by driveQuotaViewModel.loading.collectAsState()
 
-    // 账号列表 ↔ 夸克云盘 ↔ UC 云盘 ↔ 迅雷云盘 ↔ 百度云盘 ↔ 139 云盘 ↔ 123 云盘：平滑过渡（淡入 + 轻微缩放，不僵硬）
+    // 账号列表 ↔ 夸克云盘 ↔ UC 云盘 ↔ 迅雷云盘 ↔ 百度云盘 ↔ 移动云盘 ↔ 123 云盘：平滑过渡（淡入 + 轻微缩放，不僵硬）
     AnimatedContent(
         targetState = when {
             showCloud -> 1

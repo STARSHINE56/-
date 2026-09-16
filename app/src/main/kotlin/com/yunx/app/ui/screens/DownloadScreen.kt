@@ -158,8 +158,16 @@ fun DownloadScreen(
                         it.status == DownloadTaskEntity.STATUS_PAUSED ||
                             it.status == DownloadTaskEntity.STATUS_FAILED
                     },
+                    hasFailed = tasks.any {
+                        it.status == DownloadTaskEntity.STATUS_FAILED
+                    },
+                    hasCompleted = tasks.any {
+                        it.status == DownloadTaskEntity.STATUS_COMPLETED
+                    },
                     onPauseAll = { viewModel.pauseAll() },
                     onResumeAll = { viewModel.resumeAll() },
+                    onRetryFailed = { viewModel.retryFailed() },
+                    onClearCompleted = { viewModel.clearCompleted() },
                     onDeleteAll = { showDeleteAllConfirm = true }
                 )
                 LazyColumn(
@@ -296,44 +304,172 @@ fun DownloadScreen(
 private fun DownloadBatchBar(
     hasActive: Boolean,
     hasResumable: Boolean,
+    hasFailed: Boolean,
+    hasCompleted: Boolean,
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit,
+    onRetryFailed: () -> Unit,
+    onClearCompleted: () -> Unit,
     onDeleteAll: () -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(
+                horizontal = 12.dp,
+                vertical = 2.dp
+            )
     ) {
-        TextButton(onClick = onPauseAll, enabled = hasActive) {
-            Icon(
-                imageVector = Icons.Outlined.Pause,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment =
+                Alignment.CenterVertically
+        ) {
+            TextButton(
+                onClick = onPauseAll,
+                enabled = hasActive
+            ) {
+                Icon(
+                    imageVector =
+                        Icons.Outlined.Pause,
+                    contentDescription = null,
+                    modifier =
+                        Modifier.size(16.dp)
+                )
+
+                Spacer(
+                    modifier =
+                        Modifier.width(4.dp)
+                )
+
+                Text("全部暂停")
+            }
+
+            TextButton(
+                onClick = onResumeAll,
+                enabled = hasResumable
+            ) {
+                Icon(
+                    imageVector =
+                        Icons.Outlined.PlayArrow,
+                    contentDescription = null,
+                    modifier =
+                        Modifier.size(16.dp)
+                )
+
+                Spacer(
+                    modifier =
+                        Modifier.width(4.dp)
+                )
+
+                Text("全部开始")
+            }
+
+            Spacer(
+                modifier =
+                    Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("全部暂停")
+
+            TextButton(
+                onClick = onDeleteAll
+            ) {
+                Icon(
+                    imageVector =
+                        Icons.Outlined.Delete,
+                    contentDescription = null,
+                    modifier =
+                        Modifier.size(16.dp),
+                    tint =
+                        MaterialTheme
+                            .colorScheme
+                            .error
+                )
+
+                Spacer(
+                    modifier =
+                        Modifier.width(4.dp)
+                )
+
+                Text(
+                    text = "删除全部",
+                    color =
+                        MaterialTheme
+                            .colorScheme
+                            .error
+                )
+            }
         }
-        TextButton(onClick = onResumeAll, enabled = hasResumable) {
-            Icon(
-                imageVector = Icons.Outlined.PlayArrow,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("全部开始")
-        }
-        Spacer(modifier = Modifier.weight(1f))
-        TextButton(onClick = onDeleteAll) {
-            Icon(
-                imageVector = Icons.Outlined.Delete,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.error
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("删除全部", color = MaterialTheme.colorScheme.error)
+
+        if (
+            hasFailed ||
+            hasCompleted
+        ) {
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+                if (hasFailed) {
+                    TextButton(
+                        onClick =
+                            onRetryFailed
+                    ) {
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.Refresh,
+                            contentDescription =
+                                null,
+                            modifier =
+                                Modifier.size(16.dp)
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(4.dp)
+                        )
+
+                        Text(
+                            "重试全部失败"
+                        )
+                    }
+                }
+
+                if (
+                    hasFailed &&
+                    hasCompleted
+                ) {
+                    Spacer(
+                        modifier =
+                            Modifier.width(4.dp)
+                    )
+                }
+
+                if (hasCompleted) {
+                    TextButton(
+                        onClick =
+                            onClearCompleted
+                    ) {
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.Delete,
+                            contentDescription =
+                                null,
+                            modifier =
+                                Modifier.size(16.dp)
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(4.dp)
+                        )
+
+                        Text(
+                            "清除已完成"
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -458,6 +594,7 @@ private fun FolderDownloadGroup(
 ) {
     var expanded by remember { mutableStateOf(true) }
     val completed = tasks.count { it.status == DownloadTaskEntity.STATUS_COMPLETED }
+    val failed = tasks.count { it.status == DownloadTaskEntity.STATUS_FAILED }
     val totalSize = tasks.sumOf { it.totalSize }
     // 聚合显示钳制：任何单项竞态残留都不会让"已下载 > 总大小"
     val downloaded = minOf(tasks.sumOf { it.downloadedSize }, totalSize)
@@ -508,7 +645,17 @@ private fun FolderDownloadGroup(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "${completed}/${tasks.size} 个文件 · ${formatSize(downloaded)} / ${formatSize(totalSize)}",
+                        text = buildString {
+                            append("${completed}/${tasks.size} 个文件")
+
+                            if (failed > 0) {
+                                append(" · $failed 个失败")
+                            }
+
+                            append(
+                                " · ${formatSize(downloaded)} / ${formatSize(totalSize)}"
+                            )
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -647,11 +794,30 @@ private fun DownloadSubTaskRow(
                     )
                     Text(
                         text = when {
-                            isDownloading && stats != null && stats.speed > 0 ->
-                                "${DownloadTaskEntity.statusText(task.status)} · ${formatSpeed(stats.speed)}"
-                            task.status == DownloadTaskEntity.STATUS_COMPLETED && task.avgSpeed > 0 ->
-                                "${DownloadTaskEntity.statusText(task.status)} · 平均 ${formatSpeed(task.avgSpeed)}"
-                            else -> taskStatusLine(task)
+                            isDownloading &&
+                                stats != null &&
+                                stats.speed > 0 -> {
+                                "${DownloadTaskEntity.statusText(task.status)} · " +
+                                    "${formatSpeed(stats.speed)} · " +
+                                    "剩余 ${formatRemain(stats.remainMillis)} · " +
+                                    "${stats.chunkCount} 线程"
+                            }
+
+                            task.status ==
+                                DownloadTaskEntity.STATUS_FAILED &&
+                                task.errorMsg.isNotBlank() -> {
+                                "失败 · ${task.errorMsg}"
+                            }
+
+                            task.status ==
+                                DownloadTaskEntity.STATUS_COMPLETED &&
+                                task.avgSpeed > 0 -> {
+                                "${DownloadTaskEntity.statusText(task.status)} · " +
+                                    "平均 ${formatSpeed(task.avgSpeed)}"
+                            }
+
+                            else ->
+                                taskStatusLine(task)
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = if (task.status == DownloadTaskEntity.STATUS_FAILED) {
@@ -994,11 +1160,32 @@ private fun copyToClipboard(context: Context, text: String) {
     cm.setPrimaryClip(ClipData.newPlainText("yunx_url", text))
 }
 
-private fun taskStatusLine(task: DownloadTaskEntity): String {
-    val status = DownloadTaskEntity.statusText(task.status)
+private fun taskStatusLine(
+    task: DownloadTaskEntity
+): String {
+    val status = when (task.status) {
+        DownloadTaskEntity.STATUS_PENDING ->
+            "等待中 · 等待其他任务"
+
+        DownloadTaskEntity.STATUS_PAUSED ->
+            "已暂停"
+
+        DownloadTaskEntity.STATUS_FAILED ->
+            "失败"
+
+        else ->
+            DownloadTaskEntity.statusText(
+                task.status
+            )
+    }
+
     return if (task.totalSize > 0) {
-        // 显示值钳制到 total（防恢复竞态残留导致显示超总大小）
-        val shown = minOf(task.downloadedSize, task.totalSize)
+        // 显示值钳制到 total，避免恢复竞态导致显示超过总大小。
+        val shown = minOf(
+            task.downloadedSize,
+            task.totalSize
+        )
+
         "$status · ${formatSize(shown)} / ${formatSize(task.totalSize)}"
     } else {
         status

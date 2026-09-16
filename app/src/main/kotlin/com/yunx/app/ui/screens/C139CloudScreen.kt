@@ -104,7 +104,7 @@ import com.yunx.app.ui.viewmodel.C139CloudUiState
 import com.yunx.app.ui.viewmodel.C139CloudViewModel
 
 /**
- * 139 网盘（和彩云）云盘浏览页（参考百度/夸克云盘）：
+ * 移动云盘（和彩云）云盘浏览页（参考百度/夸克云盘）：
  * - 目录浏览 + 下拉刷新 + 面包屑回退
  * - 长按多选（批量下载/分享/移动/删除）
  * - 文件/文件夹操作菜单（下载/重命名/移动/分享/删除）
@@ -262,7 +262,7 @@ fun C139CloudScreen(
                                             }
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = "139网盘",
+                                                    text = "移动云盘",
                                                     style = MaterialTheme.typography.titleMedium,
                                                     fontWeight = FontWeight.Medium,
                                                     maxLines = 1,
@@ -291,7 +291,7 @@ fun C139CloudScreen(
                                     }
                                     if (!viewModel.multiSelectMode) {
                                         CrumbBar(
-                                            rootTitle = "139网盘",
+                                            rootTitle = "移动云盘",
                                             pathNames = s.pathNames,
                                             onNavigate = { level ->
                                                 scrollPositions[currentDirKey] = listState.firstVisibleItemIndex

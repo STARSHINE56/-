@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 /**
- * 139 网盘账号数据仓库：Room 持久化 + Cookie 校验。
+ * 移动云盘账号数据仓库：Room 持久化 + Cookie 校验。
  * 登录态 = mail.10086.cn 的 Os_SSo_Sid + RMKEY（WebView 登录后提取）。
  */
 class C139AccountRepository(

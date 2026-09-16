@@ -615,7 +615,7 @@ internal fun ShareResultDialog(
     val snackbarHostState = rememberGlobalSnackbarHostState()
     // 拼接分享文案（按平台区分：139 / 123 / UC / 迅雷 / 百度 / 夸克）
     val platformName = when {
-        info.shareUrl.contains("139.com") -> "139网盘"
+        info.shareUrl.contains("139.com") -> "移动云盘"
         info.shareUrl.contains("123pan") || info.shareUrl.contains("123865") -> "123云盘"
         info.shareUrl.contains("uc.cn") -> "UC网盘"
         info.shareUrl.contains("xunlei.com") -> "迅雷网盘"

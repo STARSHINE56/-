@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * 139 网盘账号 ViewModel：暴露登录态，供主页与登录页共享。
+ * 移动云盘账号 ViewModel：暴露登录态，供主页与登录页共享。
  */
 class C139AccountViewModel(
     private val repository: C139AccountRepository

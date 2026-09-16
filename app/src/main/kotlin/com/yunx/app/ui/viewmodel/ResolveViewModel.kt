@@ -182,12 +182,12 @@ class ResolveViewModel(
                     SharePlatform.C139 -> {
                         val credential = currentCredential()
                         if (credential.isNullOrBlank()) {
-                            saveMessage = "请先登录139网盘"
+                            saveMessage = "请先登录移动云盘"
                             return@launch
                         }
                         c139ResolveRepository.transferFile(s, file, toDirFid, credential)
                             .onSuccess {
-                                saveMessage = "已保存到139网盘"
+                                saveMessage = "已保存到移动云盘"
                                 saveTarget = null
                             }
                             .onFailure {
@@ -506,7 +506,7 @@ class ResolveViewModel(
         SharePlatform.UC -> "UC 网盘"
         SharePlatform.XUNLEI -> "迅雷网盘"
         SharePlatform.BAIDU -> "百度网盘"
-        SharePlatform.C139 -> "139 网盘"
+        SharePlatform.C139 -> "移动云盘"
         SharePlatform.PAN123 -> "123云盘"
         else -> "夸克网盘"
     }

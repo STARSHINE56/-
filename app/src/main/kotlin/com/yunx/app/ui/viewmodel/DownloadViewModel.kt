@@ -67,6 +67,37 @@ class DownloadViewModel(private val manager: DownloadManager) : ViewModel() {
         }.forEach { manager.start(it.id) }
     }
 
+    /** 仅重试全部失败任务，不影响已暂停任务。 */
+    fun retryFailed() {
+        tasks.value
+            .filter {
+                it.status ==
+                    DownloadTaskEntity.STATUS_FAILED
+            }
+            .forEach {
+                manager.start(it.id)
+            }
+    }
+
+    /**
+     * 清除全部已完成任务记录。
+     *
+     * 不删除已经保存到本地的文件。
+     */
+    fun clearCompleted() {
+        tasks.value
+            .filter {
+                it.status ==
+                    DownloadTaskEntity.STATUS_COMPLETED
+            }
+            .forEach {
+                manager.remove(
+                    it.id,
+                    deleteLocal = false
+                )
+            }
+    }
+
     /** 删除全部任务（可同时删除已保存到本地的文件） */
     fun removeAll(deleteLocal: Boolean = false) {
         tasks.value.toList().forEach { manager.remove(it.id, deleteLocal) }
