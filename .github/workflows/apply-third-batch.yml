@@ -59,7 +59,8 @@ jobs:
 
               if count != expected:
                   raise RuntimeError(
-                      f"{label}: expected {expected} matches, found {count}"
+                      f"{label}: expected {expected} matches, "
+                      f"found {count}"
                   )
 
               print(
@@ -88,7 +89,8 @@ jobs:
 
               if count != expected:
                   raise RuntimeError(
-                      f"{label}: expected {expected} matches, found {count}"
+                      f"{label}: expected {expected} matches, "
+                      f"found {count}"
                   )
 
               print(
@@ -98,10 +100,8 @@ jobs:
               return updated
 
           # ============================================================
-          # 1. 下载页
-          #    - 删除两个“复制直链”
-          #    - 保留“重新下载 / 删除任务”
-          #    - 删除 Clipboard 相关代码
+          # 1. 下载页清理
+          #    删除两个“复制直链”
           # ============================================================
 
           download_screen_path = Path(
@@ -132,21 +132,22 @@ jobs:
               2
           )
 
-          imports_to_remove = [
+          for old_import in [
               "import android.content.ClipData\n",
               "import android.content.ClipboardManager\n",
               "import androidx.compose.material.icons.outlined.ContentCopy\n",
-          ]
-
-          for old_import in imports_to_remove:
+          ]:
               if old_import in download_screen:
-                  download_screen = download_screen.replace(
-                      old_import,
-                      ""
+                  download_screen = (
+                      download_screen.replace(
+                          old_import,
+                          ""
+                      )
                   )
 
                   print(
-                      f"OK: removed import {old_import.strip()}"
+                      "OK: removed "
+                      + old_import.strip()
                   )
 
           clipboard_helper = '''private fun copyToClipboard(context: Context, text: String) {
@@ -160,7 +161,7 @@ jobs:
               download_screen,
               clipboard_helper,
               "",
-              "Remove copyToClipboard helper"
+              "Remove clipboard helper"
           )
 
           download_screen = download_screen.replace(
@@ -174,7 +175,7 @@ jobs:
           )
 
           # ============================================================
-          # 2. 下载失败/链接失效提示优化
+          # 2. 下载链接失效文案
           # ============================================================
 
           download_vm_path = Path(
@@ -193,9 +194,9 @@ jobs:
 
           download_vm = replace_once(
               download_vm,
-              '''SnackbarController.show(if (ok) "已重新加入下载" else "直链已过期，请重新获取下载链接")''',
-              '''SnackbarController.show(if (ok) "已重新加入下载" else "下载链接已失效，请重新解析后下载")''',
-              "Improve expired download message"
+              'SnackbarController.show(if (ok) "已重新加入下载" else "直链已过期，请重新获取下载链接")',
+              'SnackbarController.show(if (ok) "已重新加入下载" else "下载链接已失效，请重新解析后下载")',
+              "Improve expired link message"
           )
 
           download_vm_path.write_text(
@@ -204,13 +205,7 @@ jobs:
           )
 
           # ============================================================
-          # 3. 账号状态检测细分
-          #
-          # HEALTHY       正常
-          # NETWORK_ERROR 网络检测失败
-          # SUSPECT       登录可能已失效
-          #
-          # 网络错误不会删除账号
+          # 3. 账号状态增加 NETWORK_ERROR
           # ============================================================
 
           quota_path = Path(
@@ -230,53 +225,49 @@ jobs:
               "Import IOException"
           )
 
-          old_enum = '''enum class DriveLoginState {
+          quota = replace_once(
+              quota,
+              '''enum class DriveLoginState {
               LOGGED_OUT,
               CHECKING,
               HEALTHY,
               SUSPECT
-          }'''
-
-          new_enum = '''enum class DriveLoginState {
+          }''',
+              '''enum class DriveLoginState {
               LOGGED_OUT,
               CHECKING,
               HEALTHY,
               NETWORK_ERROR,
               SUSPECT
-          }'''
-
-          quota = replace_once(
-              quota,
-              old_enum,
-              new_enum,
-              "Add NETWORK_ERROR state"
+          }''',
+              "Add NETWORK_ERROR"
           )
 
           quota = replace_regex(
               quota,
               r'\.onFailure\s*\{',
               '.onFailure { error ->',
-              "Capture account check errors",
+              "Capture quota errors",
               expected=6
           )
 
-          failure_assignment = '''DriveLoginState.SUSPECT'''
+          suspect_count = quota.count(
+              "DriveLoginState.SUSPECT"
+          )
 
-          if quota.count(
-              failure_assignment
-          ) != 6:
+          if suspect_count != 6:
               raise RuntimeError(
-                  "Expected 6 SUSPECT failure assignments, "
-                  f"found {quota.count(failure_assignment)}"
+                  "Expected 6 quota failure states, "
+                  f"found {suspect_count}"
               )
 
           quota = quota.replace(
-              failure_assignment,
+              "DriveLoginState.SUSPECT",
               "classifyLoginFailure(error)"
           )
 
           print(
-              "OK: classify six account check failures"
+              "OK: six failures now classified"
           )
 
           factory_marker = '''
@@ -308,12 +299,13 @@ jobs:
               quota,
               factory_marker,
               classifier + factory_marker,
-              "Add account failure classifier"
+              "Add failure classifier"
           )
 
           quota = quota.replace(
               "SUSPECT 表示接口检测失败。",
-              "NETWORK_ERROR 表示网络访问失败；SUSPECT 表示接口或认证检测失败。"
+              "NETWORK_ERROR 表示网络访问失败；"
+              "SUSPECT 表示接口或认证检测失败。"
           )
 
           quota_path.write_text(
@@ -322,7 +314,9 @@ jobs:
           )
 
           # ============================================================
-          # 4. 网盘账号卡片新增“网络检测失败”
+          # 4. DriveScreen
+          #
+          # 这里不再依赖固定缩进
           # ============================================================
 
           drive_path = Path(
@@ -334,52 +328,66 @@ jobs:
               encoding="utf-8"
           )
 
-          old_health_text = '''                        DriveLoginState.SUSPECT ->
-                              "● 登录可能已失效"
+          status_pattern = r'''
+              (?P<indent>[ \t]*)
+              DriveLoginState\.SUSPECT
+              \s*->\s*
+              "●\s*登录可能已失效"
+          '''
 
-                          DriveLoginState.LOGGED_OUT ->
-                              "● 未登录"'''
-
-          new_health_text = '''                        DriveLoginState.NETWORK_ERROR ->
-                              "● 网络检测失败"
-
-                          DriveLoginState.SUSPECT ->
-                              "● 登录可能已失效"
-
-                          DriveLoginState.LOGGED_OUT ->
-                              "● 未登录"'''
-
-          drive = replace_once(
-              drive,
-              old_health_text,
-              new_health_text,
-              "Add network failure status text"
+          status_replacement = (
+              r'\g<indent>DriveLoginState.NETWORK_ERROR ->'
+              '\n'
+              r'\g<indent>    "● 网络检测失败"'
+              '\n\n'
+              r'\g<indent>DriveLoginState.SUSPECT ->'
+              '\n'
+              r'\g<indent>    "● 登录可能已失效"'
           )
 
-          old_health_color = '''                            DriveLoginState.SUSPECT ->
-                                  MaterialTheme
-                                      .colorScheme
-                                      .error
-
-                              else ->'''
-
-          new_health_color = '''                            DriveLoginState.SUSPECT ->
-                                  MaterialTheme
-                                      .colorScheme
-                                      .error
-
-                              DriveLoginState.NETWORK_ERROR ->
-                                  MaterialTheme
-                                      .colorScheme
-                                      .tertiary
-
-                              else ->'''
-
-          drive = replace_once(
+          drive = replace_regex(
               drive,
-              old_health_color,
-              new_health_color,
-              "Add network failure status color"
+              status_pattern,
+              status_replacement,
+              "Add network error status",
+              expected=1,
+              flags=re.VERBOSE
+          )
+
+          color_pattern = r'''
+              (?P<indent>[ \t]*)
+              DriveLoginState\.SUSPECT
+              \s*->\s*
+              MaterialTheme
+              \s*\.colorScheme
+              \s*\.error
+          '''
+
+          color_replacement = (
+              r'\g<indent>DriveLoginState.SUSPECT ->'
+              '\n'
+              r'\g<indent>    MaterialTheme'
+              '\n'
+              r'\g<indent>        .colorScheme'
+              '\n'
+              r'\g<indent>        .error'
+              '\n\n'
+              r'\g<indent>DriveLoginState.NETWORK_ERROR ->'
+              '\n'
+              r'\g<indent>    MaterialTheme'
+              '\n'
+              r'\g<indent>        .colorScheme'
+              '\n'
+              r'\g<indent>        .tertiary'
+          )
+
+          drive = replace_regex(
+              drive,
+              color_pattern,
+              color_replacement,
+              "Add network error color",
+              expected=1,
+              flags=re.VERBOSE
           )
 
           drive_path.write_text(
@@ -407,7 +415,7 @@ jobs:
           private fun HistoryCard(
           '''
 
-          time_helper = '''/**
+          history_helper = '''/**
            * 将解析时间转换为简短的相对时间。
            */
           private fun formatHistoryTime(
@@ -462,62 +470,86 @@ jobs:
           resolve = replace_once(
               resolve,
               history_marker,
-              time_helper,
-              "Add history relative time helper"
+              history_helper,
+              "Add history time formatter"
           )
 
-          old_link_text = '''                Text(
-                      text =
-                          item.link,
-
-                      style =
-                          MaterialTheme
-                              .typography
-                              .bodySmall,
-
-                      color =
-                          MaterialTheme
-                              .colorScheme
-                              .onSurfaceVariant,
-
-                      maxLines = 1,
-
-                      overflow =
-                          TextOverflow.Ellipsis
-                  )
+          history_link_pattern = r'''
+              (?P<block>
+              [ \t]*Text\(
+              \s*text\s*=\s*
+              item\.link,
+              \s*style\s*=\s*
+              MaterialTheme
+              \s*\.typography
+              \s*\.bodySmall,
+              \s*color\s*=\s*
+              MaterialTheme
+              \s*\.colorScheme
+              \s*\.onSurfaceVariant,
+              \s*maxLines\s*=\s*1,
+              \s*overflow\s*=\s*
+              TextOverflow\.Ellipsis
+              \s*\)
+              )
           '''
 
-          new_link_text = old_link_text + '''
-                  val historyTime =
-                      formatHistoryTime(
-                          item.timestamp
-                      )
+          def add_history_time(match):
+              block = match.group("block")
 
-                  if (
-                      historyTime.isNotBlank()
-                  ) {
-                      Text(
-                          text =
-                              historyTime,
+              indent_match = re.match(
+                  r'([ \t]*)',
+                  block
+              )
 
-                          style =
-                              MaterialTheme
-                                  .typography
-                                  .labelSmall,
+              indent = (
+                  indent_match.group(1)
+                  if indent_match
+                  else ""
+              )
 
-                          color =
-                              MaterialTheme
-                                  .colorScheme
-                                  .onSurfaceVariant
-                      )
-                  }
-          '''
+              extra = f'''
 
-          resolve = replace_once(
+          {indent}val historyTime =
+          {indent}    formatHistoryTime(
+          {indent}        item.timestamp
+          {indent}    )
+
+          {indent}if (historyTime.isNotBlank()) {{
+          {indent}    Text(
+          {indent}        text =
+          {indent}            historyTime,
+
+          {indent}        style =
+          {indent}            MaterialTheme
+          {indent}                .typography
+          {indent}                .labelSmall,
+
+          {indent}        color =
+          {indent}            MaterialTheme
+          {indent}                .colorScheme
+          {indent}                .onSurfaceVariant
+          {indent}    )
+          {indent}}}'''
+
+              return block + extra
+
+          resolve, history_count = re.subn(
+              history_link_pattern,
+              add_history_time,
               resolve,
-              old_link_text,
-              new_link_text,
-              "Show time in recent history"
+              count=1,
+              flags=re.VERBOSE
+          )
+
+          if history_count != 1:
+              raise RuntimeError(
+                  "History link block: expected 1, "
+                  f"found {history_count}"
+              )
+
+          print(
+              "OK: recent history displays time"
           )
 
           resolve_path.write_text(
@@ -526,18 +558,19 @@ jobs:
           )
 
           # ============================================================
-          # 6. Test Build APK 永久增加 lintDebug
+          # 6. Test Build APK 增加 lintDebug
           # ============================================================
 
-          test_workflow_path = Path(
+          test_path = Path(
               ".github/workflows/test-build.yml"
           )
 
-          test_workflow = test_workflow_path.read_text(
+          test_workflow = test_path.read_text(
               encoding="utf-8"
           )
 
-          build_marker = '''      - name: Build debug APK
+          if "lintDebug" not in test_workflow:
+              build_marker = '''      - name: Build debug APK
                   shell: bash
                   run: |
                     ./gradlew \\
@@ -547,7 +580,7 @@ jobs:
                       assembleDebug
           '''
 
-          lint_and_build = '''      - name: Run Android lint
+              lint_build = '''      - name: Run Android lint
                   shell: bash
                   run: |
                     ./gradlew \\
@@ -566,26 +599,27 @@ jobs:
                       assembleDebug
           '''
 
-          test_workflow = replace_once(
-              test_workflow,
-              build_marker,
-              lint_and_build,
-              "Add lintDebug to test workflow"
-          )
+              test_workflow = replace_once(
+                  test_workflow,
+                  build_marker,
+                  lint_build,
+                  "Add lintDebug to Test Build"
+              )
 
-          test_workflow_path.write_text(
+          else:
+              print(
+                  "OK: lintDebug already exists"
+              )
+
+          test_path.write_text(
               test_workflow,
               encoding="utf-8"
           )
 
           # ============================================================
-          # 7. 清理用户可见的旧网盘文案
+          # 7. 文案和注释清理
           #
-          # 不修改：
-          # C139Api
-          # c139Cookie
-          # C139Account
-          # 等内部代码标识
+          # 不改 C139Api / c139Cookie 等内部代码标识符
           # ============================================================
 
           roots = [
@@ -617,11 +651,11 @@ jobs:
 
               elif root.is_dir():
                   files = [
-                      item
-                      for item in root.rglob("*")
+                      path
+                      for path in root.rglob("*")
                       if (
-                          item.is_file() and
-                          item.suffix in extensions
+                          path.is_file()
+                          and path.suffix in extensions
                       )
                   ]
 
@@ -629,12 +663,12 @@ jobs:
                   continue
 
               for path in files:
-                  text = path.read_text(
+                  original = path.read_text(
                       encoding="utf-8",
                       errors="ignore"
                   )
 
-                  updated = text
+                  updated = original
 
                   for old, new in replacements.items():
                       updated = updated.replace(
@@ -642,7 +676,7 @@ jobs:
                           new
                       )
 
-                  if updated != text:
+                  if updated != original:
                       path.write_text(
                           updated,
                           encoding="utf-8"
@@ -656,7 +690,7 @@ jobs:
           )
 
           # ============================================================
-          # 8. Python 阶段自检
+          # 8. Python 自检
           # ============================================================
 
           download_check = (
@@ -665,16 +699,18 @@ jobs:
               )
           )
 
-          for forbidden in [
+          forbidden_download = [
               "复制直链",
               "直链已复制",
               "ContentCopy",
               "copyToClipboard(",
-          ]:
-              if forbidden in download_check:
+          ]
+
+          for value in forbidden_download:
+              if value in download_check:
                   raise RuntimeError(
-                      f"DownloadScreen still contains: "
-                      f"{forbidden}"
+                      "DownloadScreen still contains: "
+                      + value
                   )
 
           download_vm_check = (
@@ -688,57 +724,80 @@ jobs:
               not in download_vm_check
           ):
               raise RuntimeError(
-                  "New expired-link message missing"
+                  "New link-expired text missing"
               )
 
           quota_check = quota_path.read_text(
               encoding="utf-8"
           )
 
-          for required in [
+          for value in [
               "NETWORK_ERROR",
               "classifyLoginFailure",
               "IOException",
           ]:
-              if required not in quota_check:
+              if value not in quota_check:
                   raise RuntimeError(
-                      f"Account status code missing: "
-                      f"{required}"
+                      "Quota health code missing: "
+                      + value
                   )
 
           drive_check = drive_path.read_text(
               encoding="utf-8"
           )
 
-          if "● 网络检测失败" not in drive_check:
+          if (
+              "● 网络检测失败"
+              not in drive_check
+          ):
               raise RuntimeError(
-                  "DriveScreen network failure text missing"
+                  "Network failure UI missing"
+              )
+
+          if (
+              "DriveLoginState.NETWORK_ERROR"
+              not in drive_check
+          ):
+              raise RuntimeError(
+                  "NETWORK_ERROR branch missing "
+                  "from DriveScreen"
               )
 
           resolve_check = resolve_path.read_text(
               encoding="utf-8"
           )
 
-          if "formatHistoryTime" not in resolve_check:
+          if (
+              "formatHistoryTime"
+              not in resolve_check
+          ):
               raise RuntimeError(
-                  "History relative time helper missing"
+                  "History time formatter missing"
               )
 
-          test_check = test_workflow_path.read_text(
+          if (
+              "item.timestamp"
+              not in resolve_check
+          ):
+              raise RuntimeError(
+                  "History timestamp UI missing"
+              )
+
+          test_check = test_path.read_text(
               encoding="utf-8"
           )
 
           if "lintDebug" not in test_check:
               raise RuntimeError(
-                  "lintDebug missing from test-build.yml"
+                  "lintDebug missing"
               )
 
           print(
-              "Third batch patch applied successfully."
+              "Third batch source patch completed."
           )
           PY
 
-      - name: Clean whitespace and show changed files
+      - name: Clean whitespace and inspect diff
         shell: bash
         run: |
           python3 <<'PY'
@@ -774,16 +833,16 @@ jobs:
               if not path.exists():
                   continue
 
-              text = path.read_text(
+              original = path.read_text(
                   encoding="utf-8"
               )
 
               cleaned = "\n".join(
                   line.rstrip()
-                  for line in text.splitlines()
+                  for line in original.splitlines()
               )
 
-              if text.endswith("\n"):
+              if original.endswith("\n"):
                   cleaned += "\n"
 
               path.write_text(
@@ -875,38 +934,24 @@ jobs:
 
           test -f "$APK"
 
-          echo "Debug APK:"
+          echo "Debug APK verified:"
           ls -lh "$APK"
 
       - name: Final source checks
         shell: bash
         run: |
-          echo "Checking old direct-link UI..."
+          echo "Checking removed direct-link UI..."
 
-          if grep -RIn \
-            --include='*.kt' \
-            -E '复制直链|直链已复制' \
+          if grep -n \
+            -E '复制直链|直链已复制|ContentCopy|copyToClipboard' \
             app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt
           then
-            echo "Old direct-link copy UI still exists."
+            echo "Old direct-link UI still exists."
             exit 1
           fi
 
           echo
-          echo "Checking old Mobile Cloud wording..."
-
-          if grep -RIn \
-            --include='*.kt' \
-            --include='*.xml' \
-            -E '139 网盘|139网盘|139 云盘|139云盘' \
-            app/src
-          then
-            echo "Old Mobile Cloud wording still exists."
-            exit 1
-          fi
-
-          echo
-          echo "Checking account network state..."
+          echo "Checking account status..."
 
           grep -q \
             'NETWORK_ERROR' \
@@ -924,14 +969,27 @@ jobs:
             app/src/main/kotlin/com/yunx/app/ui/screens/ResolveScreen.kt
 
           echo
-          echo "Checking permanent lint workflow..."
+          echo "Checking lint workflow..."
 
           grep -q \
             'lintDebug' \
             .github/workflows/test-build.yml
 
           echo
-          echo "All final source checks passed."
+          echo "Checking Mobile Cloud wording..."
+
+          if grep -RIn \
+            --include='*.kt' \
+            --include='*.xml' \
+            -E '139 网盘|139网盘|139 云盘|139云盘' \
+            app/src
+          then
+            echo "Old 139 wording still exists."
+            exit 1
+          fi
+
+          echo
+          echo "All final checks passed."
 
       - name: Remove temporary workflow
         shell: bash
