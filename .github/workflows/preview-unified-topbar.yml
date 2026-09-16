@@ -1,0 +1,206 @@
+name: Preview Unified Top Bar
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  YUNX_USE_MIRROR: "false"
+
+jobs:
+  apply:
+    name: Apply unified top bar preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Apply compact unified top bar
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/MainScreen.kt"
+          )
+
+          text = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  "import androidx.compose.material3.LargeTopAppBar\n",
+                  "import androidx.compose.material3.TopAppBar\n",
+              ),
+              (
+                  " * - 顶部可折叠大标题（LargeTopAppBar），切换 Tab 时标题文字随 Tab 变化，折叠状态不受影响；",
+                  " * - 主页面统一使用紧凑 TopAppBar，标题高度与二级页面保持一致；",
+              ),
+              (
+                  "    // 折叠标题状态提升到本层：跨页面共享，页面切换时折叠/展开状态保持不变\n"
+                  "    // 用 exitUntilCollapsed（默认实现，含松手吸附）：滚动时标题先收起再滚内容；\n"
+                  "    // 向上滚动回顶部过程中标题保持收起，只有列表到达最顶部后继续下拉（overscroll）才重新展开\n"
+                  "    val topAppBarState = rememberTopAppBarState()\n"
+                  "    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)",
+                  "    // 统一顶部栏：固定紧凑高度，不再使用可折叠大标题。\n"
+                  "    // 保留 scrollBehavior，兼容各页面现有滚动实现。\n"
+                  "    val topAppBarState = rememberTopAppBarState()\n"
+                  "    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(topAppBarState)",
+              ),
+              (
+                  "    // 顶部可折叠大标题（竖屏 / 横屏共用）\n"
+                  "    val topBarContent: @Composable () -> Unit = {\n"
+                  "        LargeTopAppBar(\n"
+                  "            title = {\n"
+                  "                Text(\n"
+                  "                    text = currentTab.title,\n"
+                  "                    style = MaterialTheme.typography.headlineMedium,\n"
+                  "                    fontWeight = FontWeight.SemiBold\n"
+                  "                )\n"
+                  "            },",
+                  "    // 统一紧凑顶部栏（竖屏 / 横屏共用）\n"
+                  "    val topBarContent: @Composable () -> Unit = {\n"
+                  "        TopAppBar(\n"
+                  "            title = {\n"
+                  "                Text(\n"
+                  "                    text = currentTab.title,\n"
+                  "                    style = MaterialTheme.typography.titleLarge,\n"
+                  "                    fontWeight = FontWeight.SemiBold\n"
+                  "                )\n"
+                  "            },",
+              ),
+              (
+                  "            colors = TopAppBarDefaults.largeTopAppBarColors(\n",
+                  "            colors = TopAppBarDefaults.topAppBarColors(\n",
+              ),
+          ]
+
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(
+                      "Expected source block not found:\n"
+                      + old[:160]
+                  )
+
+              text = text.replace(
+                  old,
+                  new,
+                  1,
+              )
+
+          path.write_text(
+              text,
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Verify source diff
+        shell: bash
+        run: |
+          git diff --check
+
+          git diff -- \
+            app/src/main/kotlin/com/yunx/app/ui/MainScreen.kt
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          test -x "$SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0"
+
+      - name: Configure build
+        shell: bash
+        run: |
+          sed -i \
+            '/aapt2FromMavenOverride/d' \
+            gradle.properties
+
+          printf \
+            'sdk.dir=%s\n' \
+            "$ANDROID_HOME" \
+            > local.properties
+
+          chmod +x gradlew
+
+      - name: Run unit tests and lint
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            testDebugUnitTest \
+            lintDebug
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          test -f "$APK"
+
+          ls -lh "$APK"
+
+      - name: Upload preview APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: XingChen-Assistant-Unified-TopBar-Preview
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Commit preview change
+        shell: bash
+        run: |
+          if git diff --quiet -- \
+            app/src/main/kotlin/com/yunx/app/ui/MainScreen.kt
+          then
+            echo "No source changes to commit"
+            exit 0
+          fi
+
+          git config \
+            user.name \
+            "github-actions[bot]"
+
+          git config \
+            user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            app/src/main/kotlin/com/yunx/app/ui/MainScreen.kt
+
+          git commit \
+            -m "style: unify main top app bar"
+
+          git push \
+            origin \
+            HEAD:main
