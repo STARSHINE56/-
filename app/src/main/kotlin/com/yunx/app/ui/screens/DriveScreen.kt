@@ -103,7 +103,7 @@ fun DriveScreen(
     xunleiCloudViewModel: XunleiCloudViewModel,
     /** 百度网盘云盘浏览 ViewModel */
     baiduCloudViewModel: BaiduCloudViewModel,
-    /** 移动云盘云盘浏览 ViewModel */
+    /** 移动云盘浏览 ViewModel */
     c139CloudViewModel: C139CloudViewModel,
     /** 123 云盘浏览 ViewModel */
     pan123CloudViewModel: Pan123CloudViewModel,
@@ -139,7 +139,7 @@ fun DriveScreen(
     var showXunleiCloud by rememberSaveable { mutableStateOf(false) }
     // 百度网盘云盘浏览：网盘 Tab 内切换（非全屏）
     var showBaiduCloud by rememberSaveable { mutableStateOf(false) }
-    // 移动云盘云盘浏览：网盘 Tab 内切换（非全屏）
+    // 移动云盘浏览：网盘 Tab 内切换（非全屏）
     var showC139Cloud by rememberSaveable { mutableStateOf(false) }
     // 123 云盘浏览：网盘 Tab 内切换（非全屏）
     var showPan123Cloud by rememberSaveable { mutableStateOf(false) }
@@ -154,7 +154,7 @@ fun DriveScreen(
     )
     val uc = DriveAccount(
         id = "uc",
-        name = "UC网盘",
+        name = "UC 网盘",
         description = ucAccount?.nickname ?: "点击登录，支持解析下载",
         avatarText = "UC",
         isLoggedIn = ucAccount != null
@@ -182,7 +182,7 @@ fun DriveScreen(
     )
     val pan123 = DriveAccount(
         id = "pan123",
-        name = "123云盘",
+        name = "123 云盘",
         description = pan123Account?.nickname ?: "点击登录，支持解析下载",
         avatarText = "123",
         isLoggedIn = pan123Account != null
@@ -596,6 +596,9 @@ private fun DriveAccountCardContent(
                 DriveLoginState.HEALTHY ->
                     "● 状态正常"
 
+                DriveLoginState.NETWORK_ERROR ->
+                    "● 网络检测失败"
+
                 DriveLoginState.SUSPECT ->
                     "● 登录可能已失效"
 
@@ -620,6 +623,11 @@ private fun DriveAccountCardContent(
                         MaterialTheme
                             .colorScheme
                             .error
+
+                    DriveLoginState.NETWORK_ERROR ->
+                        MaterialTheme
+                            .colorScheme
+                            .tertiary
 
                     else ->
                         MaterialTheme

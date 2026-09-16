@@ -262,7 +262,7 @@ fun Pan123CloudScreen(
                                             }
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = "123云盘",
+                                                    text = "123 云盘",
                                                     style = MaterialTheme.typography.titleMedium,
                                                     fontWeight = FontWeight.Medium,
                                                     maxLines = 1,
@@ -291,7 +291,7 @@ fun Pan123CloudScreen(
                                     }
                                     if (!viewModel.multiSelectMode) {
                                         CrumbBar(
-                                            rootTitle = "123云盘",
+                                            rootTitle = "123 云盘",
                                             pathNames = s.pathNames,
                                             onNavigate = { level ->
                                                 scrollPositions[currentDirKey] = listState.firstVisibleItemIndex

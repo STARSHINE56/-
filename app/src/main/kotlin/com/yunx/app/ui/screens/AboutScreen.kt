@@ -358,7 +358,7 @@ private fun PlatformCard() {
         "迅雷网盘" to Icons.Outlined.Speed,
         "百度网盘" to Icons.Outlined.Link,
         "移动云盘" to Icons.Outlined.Cloud,
-        "123云盘" to Icons.Outlined.Cloud
+        "123 云盘" to Icons.Outlined.Cloud
     )
 
     SectionCard {

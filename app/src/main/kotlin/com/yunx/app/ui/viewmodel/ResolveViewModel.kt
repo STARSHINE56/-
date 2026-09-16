@@ -507,7 +507,7 @@ class ResolveViewModel(
         SharePlatform.XUNLEI -> "迅雷网盘"
         SharePlatform.BAIDU -> "百度网盘"
         SharePlatform.C139 -> "移动云盘"
-        SharePlatform.PAN123 -> "123云盘"
+        SharePlatform.PAN123 -> "123 云盘"
         else -> "夸克网盘"
     }
 

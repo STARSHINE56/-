@@ -727,11 +727,11 @@ private fun BookmarkMenuDialog(
 /** 平台枚举名 → 展示名 */
 internal fun bookmarkPlatformLabel(platform: String): String = when (platform) {
     "QUARK" -> "夸克网盘"
-    "UC" -> "UC网盘"
+    "UC" -> "UC 网盘"
     "XUNLEI" -> "迅雷网盘"
     "BAIDU" -> "百度网盘"
     "C139" -> "移动云盘"
-    "PAN123" -> "123云盘"
+    "PAN123" -> "123 云盘"
     else -> "网盘"
 }
 

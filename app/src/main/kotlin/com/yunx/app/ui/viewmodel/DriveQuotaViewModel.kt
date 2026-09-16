@@ -15,11 +15,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.IOException
 
 /**
  * 已保存登录凭证的检测状态。
  *
- * SUSPECT 表示接口检测失败。
+ * NETWORK_ERROR 表示网络访问失败；SUSPECT 表示接口或认证检测失败。
  * 可能是登录凭证失效，也可能只是临时网络或网盘接口异常，
  * 因此不会自动删除账号或退出登录。
  */
@@ -27,6 +28,7 @@ enum class DriveLoginState {
     LOGGED_OUT,
     CHECKING,
     HEALTHY,
+    NETWORK_ERROR,
     SUSPECT
 }
 
@@ -172,10 +174,10 @@ class DriveQuotaViewModel(
                             _quarkQuota.value = it
                             _quarkLoginState.value =
                                 DriveLoginState.HEALTHY
-                        }.onFailure {
+                        }.onFailure { error ->
                             _quarkQuota.value = null
                             _quarkLoginState.value =
-                                DriveLoginState.SUSPECT
+                                classifyLoginFailure(error)
                         }
                     }
 
@@ -202,10 +204,10 @@ class DriveQuotaViewModel(
                             _ucQuota.value = it
                             _ucLoginState.value =
                                 DriveLoginState.HEALTHY
-                        }.onFailure {
+                        }.onFailure { error ->
                             _ucQuota.value = null
                             _ucLoginState.value =
-                                DriveLoginState.SUSPECT
+                                classifyLoginFailure(error)
                         }
                     }
 
@@ -248,10 +250,10 @@ class DriveQuotaViewModel(
                             _xunleiQuota.value = it
                             _xunleiLoginState.value =
                                 DriveLoginState.HEALTHY
-                        }.onFailure {
+                        }.onFailure { error ->
                             _xunleiQuota.value = null
                             _xunleiLoginState.value =
-                                DriveLoginState.SUSPECT
+                                classifyLoginFailure(error)
                         }
                     }
 
@@ -278,10 +280,10 @@ class DriveQuotaViewModel(
                             _baiduQuota.value = it
                             _baiduLoginState.value =
                                 DriveLoginState.HEALTHY
-                        }.onFailure {
+                        }.onFailure { error ->
                             _baiduQuota.value = null
                             _baiduLoginState.value =
-                                DriveLoginState.SUSPECT
+                                classifyLoginFailure(error)
                         }
                     }
 
@@ -308,10 +310,10 @@ class DriveQuotaViewModel(
                             _c139Quota.value = it
                             _c139LoginState.value =
                                 DriveLoginState.HEALTHY
-                        }.onFailure {
+                        }.onFailure { error ->
                             _c139Quota.value = null
                             _c139LoginState.value =
-                                DriveLoginState.SUSPECT
+                                classifyLoginFailure(error)
                         }
                     }
 
@@ -338,10 +340,10 @@ class DriveQuotaViewModel(
                             _pan123Quota.value = it
                             _pan123LoginState.value =
                                 DriveLoginState.HEALTHY
-                        }.onFailure {
+                        }.onFailure { error ->
                             _pan123Quota.value = null
                             _pan123LoginState.value =
-                                DriveLoginState.SUSPECT
+                                classifyLoginFailure(error)
                         }
                     }
                 }
@@ -350,6 +352,25 @@ class DriveQuotaViewModel(
             }
         }
     }
+
+    private fun classifyLoginFailure(
+        error: Throwable
+    ): DriveLoginState {
+        var current: Throwable? =
+            error
+
+        while (current != null) {
+            if (current is IOException) {
+                return DriveLoginState.NETWORK_ERROR
+            }
+
+            current =
+                current.cause
+        }
+
+        return DriveLoginState.SUSPECT
+    }
+
 
     class Factory(
         private val quarkApi: QuarkApi,

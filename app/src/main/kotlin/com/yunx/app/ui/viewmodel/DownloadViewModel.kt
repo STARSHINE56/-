@@ -43,11 +43,11 @@ class DownloadViewModel(private val manager: DownloadManager) : ViewModel() {
 
     fun remove(id: Long, deleteLocal: Boolean = false) = manager.remove(id, deleteLocal)
 
-    /** 重新下载：校验直链有效性后新建任务（直链过期时提示） */
+    /** 重新下载：校验下载链接有效性后新建任务（链接失效时提示） */
     fun redownload(task: DownloadTaskEntity) {
         viewModelScope.launch {
             val ok = manager.redownload(task.id)
-            SnackbarController.show(if (ok) "已重新加入下载" else "直链已过期，请重新获取下载链接")
+            SnackbarController.show(if (ok) "已重新加入下载" else "下载链接已失效，请重新解析后下载")
         }
     }
 

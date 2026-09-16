@@ -265,7 +265,7 @@ fun UCCoudScreen(
                                         }
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = "UC网盘",
+                                                text = "UC 网盘",
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Medium,
                                                 maxLines = 1,
@@ -294,7 +294,7 @@ fun UCCoudScreen(
                                 }
                                 if (!viewModel.multiSelectMode) {
                                     CrumbBar(
-                                        rootTitle = "UC网盘",
+                                        rootTitle = "UC 网盘",
                                         pathNames = s.pathNames,
                                         onNavigate = { level ->
                                             scrollPositions[currentDirKey] = listState.firstVisibleItemIndex

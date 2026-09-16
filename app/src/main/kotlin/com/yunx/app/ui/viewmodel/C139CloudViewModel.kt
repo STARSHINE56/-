@@ -41,7 +41,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
-/** 移动云盘云盘浏览 UI 状态 */
+/** 移动云盘浏览 UI 状态 */
 sealed interface C139CloudUiState {
     data object Loading : C139CloudUiState
     data class Loaded(

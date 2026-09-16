@@ -1342,6 +1342,51 @@ private fun ResolveInputContent(
 }
 
 /**
+ * 将解析时间转换为简短的相对时间。
+ */
+private fun formatHistoryTime(
+    timestamp: Long,
+    now: Long = System.currentTimeMillis()
+): String {
+    if (timestamp <= 0L) {
+        return ""
+    }
+
+    val diff =
+        (now - timestamp)
+            .coerceAtLeast(0L)
+
+    val minute =
+        60_000L
+
+    val hour =
+        60L * minute
+
+    val day =
+        24L * hour
+
+    return when {
+        diff < minute ->
+            "刚刚"
+
+        diff < hour ->
+            "${diff / minute} 分钟前"
+
+        diff < day ->
+            "${diff / hour} 小时前"
+
+        diff < 2L * day ->
+            "昨天"
+
+        diff < 7L * day ->
+            "${diff / day} 天前"
+
+        else ->
+            "较早"
+    }
+}
+
+/**
  * 最近解析单条卡片
  */
 @Composable
@@ -1469,6 +1514,28 @@ private fun HistoryCard(
                     overflow =
                         TextOverflow.Ellipsis
                 )
+
+                val historyTime =
+                    formatHistoryTime(
+                        item.timestamp
+                    )
+
+                if (historyTime.isNotBlank()) {
+                    Text(
+                        text =
+                            historyTime,
+
+                        style =
+                            MaterialTheme
+                                .typography
+                                .labelSmall,
+
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -1871,7 +1938,7 @@ private fun platformLabel(
             "移动云盘"
 
         SharePlatform.PAN123 ->
-            "123云盘"
+            "123 云盘"
     }
 
 /**

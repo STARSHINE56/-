@@ -19,8 +19,6 @@
 package com.yunx.app.ui.screens
 
 import android.Manifest
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -59,7 +57,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.ExpandLess
@@ -752,7 +749,7 @@ private fun DownloadSubTaskRow(
     } else 0f
     // 显示相对路径（去掉顶级目录前缀，如 "A/B/b.mp4" → "B/b.mp4"）
     val displayName = task.fileName.substringAfter('/')
-    // 长按任务行弹出操作菜单（复制直链 / 重新下载 / 删除）
+    // 长按任务行弹出操作菜单（重新下载 / 删除）
     var showMenu by remember { mutableStateOf(false) }
 
     Surface(
@@ -889,7 +886,7 @@ private fun DownloadSubTaskRow(
             }
         }
 
-        // 长按任务行弹出操作菜单（复制直链 / 重新下载 / 删除）
+        // 长按任务行弹出操作菜单（重新下载 / 删除）
         if (showMenu) {
             AlertDialog(
                 onDismissRequest = { showMenu = false },
@@ -903,15 +900,6 @@ private fun DownloadSubTaskRow(
                 },
                 text = {
                     Column {
-                        TextButton(onClick = {
-                            showMenu = false
-                            copyToClipboard(context, task.url)
-                            SnackbarController.show("直链已复制")
-                        }) {
-                            Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("复制直链")
-                        }
                         TextButton(onClick = {
                             showMenu = false
                             onRedownload()
@@ -953,7 +941,7 @@ private fun DownloadTaskCard(
     val fraction = if (task.totalSize > 0) {
         (task.downloadedSize.toFloat() / task.totalSize).coerceIn(0f, 1f)
     } else 0f
-    // 长按任务卡弹出操作菜单（复制直链 / 重新下载 / 删除）
+    // 长按任务卡弹出操作菜单（重新下载 / 删除）
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
@@ -1106,7 +1094,7 @@ private fun DownloadTaskCard(
             }
         }
 
-        // 长按任务卡弹出操作菜单（复制直链 / 重新下载 / 删除）
+        // 长按任务卡弹出操作菜单（重新下载 / 删除）
         if (showMenu) {
             AlertDialog(
                 onDismissRequest = { showMenu = false },
@@ -1120,15 +1108,6 @@ private fun DownloadTaskCard(
                 },
                 text = {
                     Column {
-                        TextButton(onClick = {
-                            showMenu = false
-                            copyToClipboard(context, task.url)
-                            SnackbarController.show("直链已复制")
-                        }) {
-                            Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("复制直链")
-                        }
                         TextButton(onClick = {
                             showMenu = false
                             onRedownload()
@@ -1153,11 +1132,6 @@ private fun DownloadTaskCard(
             )
         }
     }
-}
-
-private fun copyToClipboard(context: Context, text: String) {
-    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    cm.setPrimaryClip(ClipData.newPlainText("yunx_url", text))
 }
 
 private fun taskStatusLine(

@@ -325,7 +325,7 @@ fun MainScreen() {
             downloadManager
         )
     )
-    // 移动云盘云盘浏览：点击已登录的 139 卡片打开（cookie 从数据库读取）
+    // 移动云盘浏览：点击已登录的 139 卡片打开（cookie 从数据库读取）
     val c139CloudViewModel: C139CloudViewModel = viewModel(
         factory = C139CloudViewModel.Factory(
             c139Api,
