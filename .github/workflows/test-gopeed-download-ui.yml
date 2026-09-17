@@ -20,15 +20,9 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      # ============================================================
-      # 1. 获取当前 main 源码
-      # ============================================================
       - name: 检出源码
         uses: actions/checkout@v7
 
-      # ============================================================
-      # 2. Java
-      # ============================================================
       - name: 配置 Java 17
         uses: actions/setup-java@v6
         with:
@@ -36,9 +30,6 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      # ============================================================
-      # 3. Android SDK
-      # ============================================================
       - name: 配置 Android SDK
         uses: android-actions/setup-android@v4
 
@@ -58,9 +49,6 @@ jobs:
             "platforms;android-36" \
             "build-tools;35.0.0"
 
-      # ============================================================
-      # 4. Gradle 环境
-      # ============================================================
       - name: 配置 Gradle
         shell: bash
         run: |
@@ -78,22 +66,12 @@ jobs:
           chmod +x gradlew
 
       # ============================================================
-      # 5. 创建 Gopeed 下载调度状态
-      #
-      # 用途：
-      # 点击弹窗中的 Gopeed 后，
-      # 下一次 enqueue 不进入本地下载器，
-      # 而是交给 Gopeed。
-      #
-      # 设置自动过期，避免 Gopeed 启动失败后影响后续普通下载。
+      # 下载方式临时调度
       # ============================================================
       - name: 添加 Gopeed 下载调度
         shell: bash
         run: |
           set -e
-
-          mkdir -p \
-            app/src/main/kotlin/com/yunx/app/data/download
 
           cat > \
             app/src/main/kotlin/com/yunx/app/data/download/DownloadDispatchMode.kt \
@@ -103,13 +81,11 @@ jobs:
           import java.util.concurrent.atomic.AtomicLong
 
           /**
-           * 下载方式临时调度。
+           * 临时记录下一次下载是否交给 Gopeed。
            *
-           * 点击「Gopeed」后，
-           * 下一次下载入队会被 DownloadManager 转交给 Gopeed。
-           *
-           * 状态只保存很短时间，
-           * 防止下载准备失败后影响后续普通下载。
+           * 点击下载确认弹窗中的 Gopeed 后，
+           * 下一次 enqueue() 不进入本地下载数据库，
+           * 而是交给 Gopeed。
            */
           object DownloadDispatchMode {
 
@@ -146,28 +122,7 @@ jobs:
           EOF
 
       # ============================================================
-      # 6. 修改 DownloadManager
-      #
-      # 如果用户点击了 Gopeed：
-      #
-      # 原本：
-      # 下载确认
-      #   ↓
-      # DownloadManager.enqueue()
-      #   ↓
-      # 创建本地任务
-      #
-      # 现在：
-      #
-      # Gopeed
-      #   ↓
-      # DownloadManager.enqueue()
-      #   ↓
-      # ACTION_VIEW
-      #   ↓
-      # Gopeed
-      #
-      # 本地下载仍完全保持原来的逻辑。
+      # DownloadManager 接入 Gopeed
       # ============================================================
       - name: 接入 Gopeed
         shell: bash
@@ -190,17 +145,11 @@ jobs:
 
           if marker not in text:
               raise RuntimeError(
-                  "没有找到 DownloadManager.enqueue，"
-                  "源码结构可能已经发生变化"
+                  "没有找到 DownloadManager.enqueue"
               )
 
           helper = r'''    /**
                * 将下载链接交给 Gopeed。
-               *
-               * Gopeed Android applicationId:
-               * com.gopeed.gopeed
-               *
-               * 使用 ACTION_VIEW 发送 HTTP / HTTPS 下载链接。
                */
               private fun sendToGopeed(
                   url: String
@@ -285,8 +234,8 @@ jobs:
           new = """): Long {
 
                   /*
-                   * 如果用户刚刚在下载确认弹窗中选择了 Gopeed，
-                   * 本次任务不会进入 StarAssistant 本地下载数据库。
+                   * 如果用户刚刚选择 Gopeed，
+                   * 则不创建 StarAssistant 本地下载任务。
                    */
                   if (
                       DownloadDispatchMode.consumeGopeed()
@@ -321,33 +270,13 @@ jobs:
           PY
 
       # ============================================================
-      # 7. 修改下载确认弹窗
+      # 下载确认弹窗：
       #
-      # 自动寻找：
+      # 原：
+      # 关闭    开始下载
       #
-      #   Text("开始下载")
-      #
-      # 所在按钮。
-      #
-      # 原本：
-      #
-      #   关闭        开始下载
-      #
-      # 修改为：
-      #
-      #   关闭     Gopeed     本地下载
-      #
-      # Gopeed 按钮复用原下载按钮全部逻辑，
-      # 只是在执行前设置 DownloadDispatchMode。
-      #
-      # 因此不需要猜：
-      # downloadUrl
-      # Cookie
-      # Referer
-      # 文件名
-      # 平台
-      #
-      # 原来的下载准备流程仍然全部保留。
+      # 改：
+      # 关闭    Gopeed    本地下载
       # ============================================================
       - name: 把 Gopeed 按钮加入下载确认弹窗
         shell: bash
@@ -357,288 +286,131 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
 
-          root = Path(
-              "app/src/main/kotlin"
+          path = Path(
+              "app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt"
           )
 
-          candidates = []
+          text = path.read_text(
+              encoding="utf-8"
+          )
 
-          for path in root.rglob("*.kt"):
-              content = path.read_text(
-                  encoding="utf-8"
+          if (
+              "import androidx.compose.foundation.layout.Row"
+              not in text
+          ):
+              marker = (
+                  "import androidx.compose.foundation.layout.Column\n"
               )
 
-              if "开始下载" in content:
-                  candidates.append(
-                      (path, content)
+              if marker not in text:
+                  raise RuntimeError(
+                      "无法找到 Column import"
                   )
 
-          if not candidates:
-              raise RuntimeError(
-                  "没有找到包含「开始下载」的 Kotlin 文件"
+              text = text.replace(
+                  marker,
+                  marker
+                  +
+                  "import androidx.compose.foundation.layout.Row\n",
+                  1
               )
+
+          old_tip = (
+              'text = "点击「开始下载」后，将保存到 Download 目录。",'
+          )
+
+          new_tip = (
+              'text = "请选择使用 Gopeed 或星辰助手本地下载。",'
+          )
+
+          if old_tip in text:
+              text = text.replace(
+                  old_tip,
+                  new_tip,
+                  1
+              )
+
+          old = '''        confirmButton = {
+              Button(
+                  onClick = onDownload
+              ) {
+                  Icon(
+                      imageVector = Icons.Outlined.Download,
+                      contentDescription = null,
+                      modifier = Modifier.size(16.dp)
+                  )
+
+                  Spacer(
+                      modifier = Modifier.width(6.dp)
+                  )
+
+                  Text("开始下载")
+              }
+          },'''
+
+          new = '''        confirmButton = {
+              Row {
+                  TextButton(
+                      onClick = {
+                          com.yunx.app.data.download.DownloadDispatchMode
+                              .requestGopeed()
+
+                          onDownload()
+                      }
+                  ) {
+                      Text("Gopeed")
+                  }
+
+                  Spacer(
+                      modifier = Modifier.width(6.dp)
+                  )
+
+                  Button(
+                      onClick = {
+                          com.yunx.app.data.download.DownloadDispatchMode
+                              .clear()
+
+                          onDownload()
+                      }
+                  ) {
+                      Icon(
+                          imageVector = Icons.Outlined.Download,
+                          contentDescription = null,
+                          modifier = Modifier.size(16.dp)
+                      )
+
+                      Spacer(
+                          modifier = Modifier.width(6.dp)
+                      )
+
+                      Text("本地下载")
+                  }
+              }
+          },'''
+
+          if old not in text:
+              raise RuntimeError(
+                  "无法找到 DownloadLinkDialog 原始下载按钮"
+              )
+
+          text = text.replace(
+              old,
+              new,
+              1
+          )
+
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
 
           print(
-              "找到可能的下载确认弹窗："
+              "DownloadLinkDialog 修改成功"
           )
-
-          for p, _ in candidates:
-              print(
-                  " -",
-                  p
-              )
-
-          BUTTON_NAMES = [
-              "Button(",
-              "TextButton(",
-              "FilledTonalButton(",
-              "OutlinedButton("
-          ]
-
-          def find_matching_paren(
-              text,
-              open_pos
-          ):
-              depth = 0
-
-              in_string = False
-              in_char = False
-              escape = False
-
-              i = open_pos
-
-              while i < len(text):
-                  c = text[i]
-
-                  if escape:
-                      escape = False
-                      i += 1
-                      continue
-
-                  if c == "\\":
-                      if in_string or in_char:
-                          escape = True
-
-                      i += 1
-                      continue
-
-                  if (
-                      c == '"'
-                      and not in_char
-                  ):
-                      in_string = not in_string
-                      i += 1
-                      continue
-
-                  if (
-                      c == "'"
-                      and not in_string
-                  ):
-                      in_char = not in_char
-                      i += 1
-                      continue
-
-                  if in_string or in_char:
-                      i += 1
-                      continue
-
-                  if c == "(":
-                      depth += 1
-
-                  elif c == ")":
-                      depth -= 1
-
-                      if depth == 0:
-                          return i
-
-                  i += 1
-
-              return -1
-
-          patched = False
-
-          for path, text in candidates:
-
-              marker_pos = text.find(
-                  "开始下载"
-              )
-
-              while marker_pos >= 0:
-
-                  button_start = -1
-                  button_name = None
-
-                  for name in BUTTON_NAMES:
-                      pos = text.rfind(
-                          name,
-                          0,
-                          marker_pos
-                      )
-
-                      if pos > button_start:
-                          button_start = pos
-                          button_name = name
-
-                  if button_start < 0:
-                      marker_pos = text.find(
-                          "开始下载",
-                          marker_pos + 1
-                      )
-                      continue
-
-                  # 防止误找到距离非常远的其他按钮
-                  if (
-                      marker_pos -
-                      button_start
-                      > 5000
-                  ):
-                      marker_pos = text.find(
-                          "开始下载",
-                          marker_pos + 1
-                      )
-                      continue
-
-                  open_pos = (
-                      button_start +
-                      len(button_name) -
-                      1
-                  )
-
-                  button_end = find_matching_paren(
-                      text,
-                      open_pos
-                  )
-
-                  if button_end < 0:
-                      marker_pos = text.find(
-                          "开始下载",
-                          marker_pos + 1
-                      )
-                      continue
-
-                  original_button = text[
-                      button_start:
-                      button_end + 1
-                  ]
-
-                  if "onClick" not in original_button:
-                      marker_pos = text.find(
-                          "开始下载",
-                          marker_pos + 1
-                      )
-                      continue
-
-                  if "开始下载" not in original_button:
-                      marker_pos = text.find(
-                          "开始下载",
-                          marker_pos + 1
-                      )
-                      continue
-
-                  # --------------------------------------------
-                  # 创建 Gopeed 按钮
-                  # --------------------------------------------
-                  gopeed_button = original_button
-
-                  gopeed_button = gopeed_button.replace(
-                      "开始下载",
-                      "Gopeed",
-                      1
-                  )
-
-                  click_marker = (
-                      "onClick = {"
-                  )
-
-                  if click_marker not in gopeed_button:
-                      click_marker = (
-                          "onClick={"
-                      )
-
-                  if click_marker not in gopeed_button:
-                      raise RuntimeError(
-                          "找到了下载按钮，"
-                          "但无法识别 onClick 写法"
-                      )
-
-                  injected = (
-                      click_marker
-                      +
-                      """
-                              com.yunx.app.data.download.DownloadDispatchMode.requestGopeed()
-                      """
-                  )
-
-                  gopeed_button = (
-                      gopeed_button.replace(
-                          click_marker,
-                          injected,
-                          1
-                      )
-                  )
-
-                  # --------------------------------------------
-                  # 原按钮改名为「本地下载」
-                  # --------------------------------------------
-                  local_button = (
-                      original_button.replace(
-                          "开始下载",
-                          "本地下载",
-                          1
-                      )
-                  )
-
-                  replacement = (
-                      gopeed_button
-                      +
-                      "\n"
-                      +
-                      local_button
-                  )
-
-                  text = (
-                      text[:button_start]
-                      +
-                      replacement
-                      +
-                      text[button_end + 1:]
-                  )
-
-                  path.write_text(
-                      text,
-                      encoding="utf-8"
-                  )
-
-                  print(
-                      "成功修改下载确认弹窗：",
-                      path
-                  )
-
-                  patched = True
-                  break
-
-              if patched:
-                  break
-
-          if not patched:
-              raise RuntimeError(
-                  "虽然找到了「开始下载」，"
-                  "但无法自动定位对应按钮。"
-              )
           PY
 
       # ============================================================
-      # 8. 下载页优化
-      #
-      # 只优化显示。
-      #
-      # 不再在下载任务卡显示 Gopeed。
-      #
-      # 增加：
-      # 进行中
-      # 已完成
-      #
-      # 两个分类。
+      # 下载页增加「进行中 / 已完成」
       # ============================================================
       - name: 优化本地下载页面
         shell: bash
@@ -656,9 +428,7 @@ jobs:
               encoding="utf-8"
           )
 
-          # --------------------------------------------
           # FilterChip import
-          # --------------------------------------------
           if (
               "import androidx.compose.material3.FilterChip"
               not in text
@@ -669,7 +439,7 @@ jobs:
 
               if marker not in text:
                   raise RuntimeError(
-                      "无法找到 Material3 import 插入位置"
+                      "无法找到 FloatingActionButton import"
                   )
 
               text = text.replace(
@@ -680,9 +450,6 @@ jobs:
                   1
               )
 
-          # --------------------------------------------
-          # 页面分类状态
-          # --------------------------------------------
           old = """    var showAddDialog by remember { mutableStateOf(false) }
               var pendingDelete by remember { mutableStateOf<DownloadTaskEntity?>(null) }
               var showDeleteAllConfirm by remember { mutableStateOf(false) }"""
@@ -698,13 +465,11 @@ jobs:
               }
 
               val activeTasks = tasks.filter {
-                  it.status !=
-                      DownloadTaskEntity.STATUS_COMPLETED
+                  it.status != DownloadTaskEntity.STATUS_COMPLETED
               }
 
               val completedTasks = tasks.filter {
-                  it.status ==
-                      DownloadTaskEntity.STATUS_COMPLETED
+                  it.status == DownloadTaskEntity.STATUS_COMPLETED
               }
 
               val visibleTasks =
@@ -725,9 +490,6 @@ jobs:
               1
           )
 
-          # --------------------------------------------
-          # 顶部增加分类栏
-          # --------------------------------------------
           old = """            Column(modifier = Modifier.fillMaxSize()) {
                           // 批量操作栏：全部暂停 / 全部开始 / 删除全部
                           DownloadBatchBar("""
@@ -757,78 +519,18 @@ jobs:
               1
           )
 
-          # --------------------------------------------
-          # 分类过滤
-          # --------------------------------------------
-          old = """                    val rootTasks = tasks.filter { !it.fileName.contains('/') }
-                              // 文件夹下载任务：按「顶级目录」分组（整个文件夹归为一组，内部子文件夹不拆开）
-                              val folderGroups = tasks.filter { it.fileName.contains('/') }"""
+          text = text.replace(
+              """val rootTasks = tasks.filter { !it.fileName.contains('/') }""",
+              """val rootTasks = visibleTasks.filter { !it.fileName.contains('/') }""",
+              1
+          )
 
-          new = """                    val rootTasks =
-                                  visibleTasks.filter {
-                                      !it.fileName.contains('/')
-                                  }
+          text = text.replace(
+              """val folderGroups = tasks.filter { it.fileName.contains('/') }""",
+              """val folderGroups = visibleTasks.filter { it.fileName.contains('/') }""",
+              1
+          )
 
-                              // 文件夹下载任务：
-                              // 按顶级目录分组
-                              val folderGroups =
-                                  visibleTasks.filter {
-                                      it.fileName.contains('/')
-                                  }.groupBy {
-                                      it.fileName.substringBefore('/')
-                                  }"""
-
-          # 当前源码原本已经在下一行 .groupBy，
-          # 为防止重复，使用更精确的替换。
-          if old in text:
-              text = text.replace(
-                  old,
-                  new,
-                  1
-              )
-
-              # 去除原来的重复 groupBy
-              duplicate = """
-                                  .groupBy { it.fileName.substringBefore('/') }"""
-
-              first = text.find(
-                  "val folderGroups"
-              )
-
-              if first >= 0:
-                  pos = text.find(
-                      duplicate,
-                      first
-                  )
-
-                  if pos >= 0:
-                      text = (
-                          text[:pos]
-                          +
-                          text[
-                              pos
-                              +
-                              len(duplicate):
-                          ]
-                      )
-
-          else:
-              # 更安全的逐句替换
-              text = text.replace(
-                  """val rootTasks = tasks.filter { !it.fileName.contains('/') }""",
-                  """val rootTasks = visibleTasks.filter { !it.fileName.contains('/') }""",
-                  1
-              )
-
-              text = text.replace(
-                  """val folderGroups = tasks.filter { it.fileName.contains('/') }""",
-                  """val folderGroups = visibleTasks.filter { it.fileName.contains('/') }""",
-                  1
-              )
-
-          # --------------------------------------------
-          # 新分类栏 Composable
-          # --------------------------------------------
           marker = """@Composable
           private fun DownloadBatchBar("""
 
@@ -971,15 +673,12 @@ jobs:
           )
 
           print(
-              "DownloadScreen 下载页优化完成"
+              "DownloadScreen 优化完成"
           )
           PY
 
       # ============================================================
-      # 9. 检查：
-      #
-      # 确保下载任务卡里没有 Gopeed
-      # Gopeed 应只出现在确认弹窗。
+      # 检查修改结果
       # ============================================================
       - name: 检查修改结果
         shell: bash
@@ -988,7 +687,7 @@ jobs:
 
           echo
           echo "======================================"
-          echo "Git 修改文件"
+          echo "修改文件"
           echo "======================================"
           git status --short
 
@@ -1000,9 +699,8 @@ jobs:
 
           echo
           echo "======================================"
-          echo "Gopeed 相关代码"
+          echo "Gopeed 相关"
           echo "======================================"
-
           grep -R -n \
             "Gopeed" \
             app/src/main/kotlin \
@@ -1010,23 +708,30 @@ jobs:
 
           echo
           echo "======================================"
-          echo "下载确认按钮"
+          echo "下载弹窗相关"
           echo "======================================"
-
           grep -R -n \
-            "本地下载\|开始下载" \
+            "本地下载\|请选择使用 Gopeed" \
             app/src/main/kotlin \
             | head -100
 
           echo
           echo "======================================"
-          echo "代码格式基础检查"
+          echo "下载分类相关"
           echo "======================================"
+          grep -R -n \
+            "DownloadCategoryBar\|进行中" \
+            app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt \
+            | head -100
 
+          echo
+          echo "======================================"
+          echo "diff 检查"
+          echo "======================================"
           git diff --check
 
       # ============================================================
-      # 10. 单元测试
+      # 单元测试
       # ============================================================
       - name: 运行单元测试
         shell: bash
@@ -1038,11 +743,11 @@ jobs:
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             -PVERSION_NAME="1.0.0-gopeed-test" \
-            -PVERSION_CODE="9002" \
+            -PVERSION_CODE="9003" \
             testDebugUnitTest
 
       # ============================================================
-      # 11. Lint
+      # Lint
       # ============================================================
       - name: 运行 Android Lint
         shell: bash
@@ -1054,11 +759,11 @@ jobs:
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             -PVERSION_NAME="1.0.0-gopeed-test" \
-            -PVERSION_CODE="9002" \
+            -PVERSION_CODE="9003" \
             lintDebug
 
       # ============================================================
-      # 12. 构建 APK
+      # 构建 APK
       # ============================================================
       - name: 构建测试 APK
         shell: bash
@@ -1070,11 +775,11 @@ jobs:
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             -PVERSION_NAME="1.0.0-gopeed-test" \
-            -PVERSION_CODE="9002" \
+            -PVERSION_CODE="9003" \
             assembleDebug
 
       # ============================================================
-      # 13. 输出测试 APK
+      # 整理 APK
       # ============================================================
       - name: 整理 APK
         shell: bash
@@ -1099,7 +804,7 @@ jobs:
           ls -lh output/
 
       # ============================================================
-      # 14. 上传 Artifact
+      # 上传 APK
       # ============================================================
       - name: 上传测试 APK
         uses: actions/upload-artifact@v7
