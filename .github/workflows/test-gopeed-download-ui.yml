@@ -66,7 +66,7 @@ jobs:
           chmod +x gradlew
 
       # ============================================================
-      # 下载方式临时调度
+      # 1. 添加 Gopeed 下载调度
       # ============================================================
       - name: 添加 Gopeed 下载调度
         shell: bash
@@ -122,7 +122,7 @@ jobs:
           EOF
 
       # ============================================================
-      # DownloadManager 接入 Gopeed
+      # 2. DownloadManager 接入 Gopeed
       # ============================================================
       - name: 接入 Gopeed
         shell: bash
@@ -270,7 +270,7 @@ jobs:
           PY
 
       # ============================================================
-      # 下载确认弹窗：
+      # 3. 直接覆盖下载确认弹窗
       #
       # 原：
       # 关闭    开始下载
@@ -278,139 +278,209 @@ jobs:
       # 改：
       # 关闭    Gopeed    本地下载
       # ============================================================
-      - name: 把 Gopeed 按钮加入下载确认弹窗
+      - name: 更新下载确认弹窗
         shell: bash
         run: |
           set -e
 
-          python3 <<'PY'
-          from pathlib import Path
+          cat > \
+            app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt \
+            <<'EOF'
+          /*
+           * YunX (云析) - A network drive share-link parser and high-speed downloader for Android.
+           * Copyright (C) 2026 CYQawa
+           *
+           * This program is free software: you can redistribute it and/or modify
+           * it under the terms of the GNU Affero General Public License as published by
+           * the Free Software Foundation, either version 3 of the License, or
+           * (at your option) any later version.
+           *
+           * This program is distributed in the hope that it will be useful,
+           * but WITHOUT ANY WARRANTY; without even the implied warranty of
+           * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+           * GNU Affero General Public License for more details.
+           *
+           * You should have received a copy of the GNU Affero General Public License
+           * along with this program. If not, see <https://www.gnu.org/licenses/>.
+           */
 
-          path = Path(
-              "app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt"
-          )
+          package com.yunx.app.ui.resolve
 
-          text = path.read_text(
-              encoding="utf-8"
-          )
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.outlined.Download
+          import androidx.compose.material3.AlertDialog
+          import androidx.compose.material3.Button
+          import androidx.compose.material3.Icon
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.Text
+          import androidx.compose.material3.TextButton
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import com.yunx.app.data.download.DownloadDispatchMode
+          import com.yunx.app.data.network.model.DownloadLink
 
-          if (
-              "import androidx.compose.foundation.layout.Row"
-              not in text
-          ):
-              marker = (
-                  "import androidx.compose.foundation.layout.Column\n"
+          /**
+           * 下载确认弹窗。
+           *
+           * 支持：
+           * - Gopeed 下载
+           * - 星辰助手本地下载
+           */
+          @Composable
+          fun DownloadLinkDialog(
+              link: DownloadLink,
+              onDownload: () -> Unit,
+              onDismiss: () -> Unit,
+              modifier: Modifier = Modifier
+          ) {
+              AlertDialog(
+                  onDismissRequest = {
+                      DownloadDispatchMode.clear()
+                      onDismiss()
+                  },
+
+                  title = {
+                      Text(
+                          text = link.filename,
+                          style = MaterialTheme.typography.titleMedium,
+                          maxLines = 2,
+                          overflow = TextOverflow.Ellipsis
+                      )
+                  },
+
+                  text = {
+                      Column {
+                          Text(
+                              text = "文件已准备好，可以开始下载。",
+                              style = MaterialTheme.typography.bodyMedium,
+                              color = MaterialTheme.colorScheme.onSurfaceVariant
+                          )
+
+                          if (link.size > 0L) {
+                              Text(
+                                  text = "大小：${formatFileSize(link.size)}",
+                                  modifier = Modifier.padding(top = 8.dp),
+                                  style = MaterialTheme.typography.bodySmall,
+                                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                              )
+                          }
+
+                          Text(
+                              text = "请选择使用 Gopeed 或星辰助手本地下载。",
+                              modifier = Modifier.padding(top = 12.dp),
+                              style = MaterialTheme.typography.bodySmall,
+                              color = MaterialTheme.colorScheme.onSurfaceVariant
+                          )
+                      }
+                  },
+
+                  confirmButton = {
+                      Row {
+                          TextButton(
+                              onClick = {
+                                  DownloadDispatchMode.requestGopeed()
+                                  onDownload()
+                              }
+                          ) {
+                              Text("Gopeed")
+                          }
+
+                          Spacer(
+                              modifier = Modifier.width(6.dp)
+                          )
+
+                          Button(
+                              onClick = {
+                                  DownloadDispatchMode.clear()
+                                  onDownload()
+                              }
+                          ) {
+                              Icon(
+                                  imageVector = Icons.Outlined.Download,
+                                  contentDescription = null,
+                                  modifier = Modifier.size(16.dp)
+                              )
+
+                              Spacer(
+                                  modifier = Modifier.width(6.dp)
+                              )
+
+                              Text("本地下载")
+                          }
+                      }
+                  },
+
+                  dismissButton = {
+                      TextButton(
+                          onClick = {
+                              DownloadDispatchMode.clear()
+                              onDismiss()
+                          }
+                      ) {
+                          Text("关闭")
+                      }
+                  },
+
+                  modifier = modifier
+              )
+          }
+
+          private fun formatFileSize(
+              bytes: Long
+          ): String {
+              if (bytes <= 0L) {
+                  return "未知"
+              }
+
+              val units = arrayOf(
+                  "B",
+                  "KB",
+                  "MB",
+                  "GB",
+                  "TB"
               )
 
-              if marker not in text:
-                  raise RuntimeError(
-                      "无法找到 Column import"
-                  )
+              var value = bytes.toDouble()
+              var unit = 0
 
-              text = text.replace(
-                  marker,
-                  marker
-                  +
-                  "import androidx.compose.foundation.layout.Row\n",
-                  1
-              )
-
-          old_tip = (
-              'text = "点击「开始下载」后，将保存到 Download 目录。",'
-          )
-
-          new_tip = (
-              'text = "请选择使用 Gopeed 或星辰助手本地下载。",'
-          )
-
-          if old_tip in text:
-              text = text.replace(
-                  old_tip,
-                  new_tip,
-                  1
-              )
-
-          old = '''        confirmButton = {
-              Button(
-                  onClick = onDownload
+              while (
+                  value >= 1024.0 &&
+                  unit < units.lastIndex
               ) {
-                  Icon(
-                      imageVector = Icons.Outlined.Download,
-                      contentDescription = null,
-                      modifier = Modifier.size(16.dp)
-                  )
-
-                  Spacer(
-                      modifier = Modifier.width(6.dp)
-                  )
-
-                  Text("开始下载")
+                  value /= 1024.0
+                  unit++
               }
-          },'''
 
-          new = '''        confirmButton = {
-              Row {
-                  TextButton(
-                      onClick = {
-                          com.yunx.app.data.download.DownloadDispatchMode
-                              .requestGopeed()
-
-                          onDownload()
-                      }
-                  ) {
-                      Text("Gopeed")
-                  }
-
-                  Spacer(
-                      modifier = Modifier.width(6.dp)
+              return if (unit == 0) {
+                  "$bytes ${units[unit]}"
+              } else {
+                  String.format(
+                      java.util.Locale.US,
+                      "%.2f %s",
+                      value,
+                      units[unit]
                   )
-
-                  Button(
-                      onClick = {
-                          com.yunx.app.data.download.DownloadDispatchMode
-                              .clear()
-
-                          onDownload()
-                      }
-                  ) {
-                      Icon(
-                          imageVector = Icons.Outlined.Download,
-                          contentDescription = null,
-                          modifier = Modifier.size(16.dp)
-                      )
-
-                      Spacer(
-                          modifier = Modifier.width(6.dp)
-                      )
-
-                      Text("本地下载")
-                  }
               }
-          },'''
+          }
+          EOF
 
-          if old not in text:
-              raise RuntimeError(
-                  "无法找到 DownloadLinkDialog 原始下载按钮"
-              )
+          echo
+          echo "DownloadLinkDialog.kt 已更新"
 
-          text = text.replace(
-              old,
-              new,
-              1
-          )
-
-          path.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-          print(
-              "DownloadLinkDialog 修改成功"
-          )
-          PY
+          grep -n \
+            "Gopeed\|本地下载\|DownloadDispatchMode" \
+            app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt
 
       # ============================================================
-      # 下载页增加「进行中 / 已完成」
+      # 4. 下载页增加「进行中 / 已完成」
       # ============================================================
       - name: 优化本地下载页面
         shell: bash
@@ -428,7 +498,6 @@ jobs:
               encoding="utf-8"
           )
 
-          # FilterChip import
           if (
               "import androidx.compose.material3.FilterChip"
               not in text
@@ -552,26 +621,20 @@ jobs:
                       )
               ) {
                   Row(
-                      modifier =
-                          Modifier.fillMaxWidth(),
-                      verticalAlignment =
-                          Alignment.CenterVertically
+                      modifier = Modifier.fillMaxWidth(),
+                      verticalAlignment = Alignment.CenterVertically
                   ) {
                       Column(
-                          modifier =
-                              Modifier.weight(1f)
+                          modifier = Modifier.weight(1f)
                       ) {
                           Text(
                               text = "下载任务",
-                              style =
-                                  MaterialTheme.typography.titleLarge,
-                              fontWeight =
-                                  FontWeight.SemiBold
+                              style = MaterialTheme.typography.titleLarge,
+                              fontWeight = FontWeight.SemiBold
                           )
 
                           Spacer(
-                              modifier =
-                                  Modifier.height(2.dp)
+                              modifier = Modifier.height(2.dp)
                           )
 
                           Text(
@@ -581,51 +644,39 @@ jobs:
                                   } else {
                                       "当前没有进行中的下载"
                                   },
-                              style =
-                                  MaterialTheme.typography.bodySmall,
-                              color =
-                                  MaterialTheme.colorScheme.onSurfaceVariant
+                              style = MaterialTheme.typography.bodySmall,
+                              color = MaterialTheme.colorScheme.onSurfaceVariant
                           )
                       }
 
                       if (activeCount > 0) {
                           Surface(
-                              shape =
-                                  RoundedCornerShape(50),
-                              color =
-                                  MaterialTheme.colorScheme.primaryContainer
+                              shape = RoundedCornerShape(50),
+                              color = MaterialTheme.colorScheme.primaryContainer
                           ) {
                               Text(
-                                  text =
-                                      "$activeCount",
-                                  style =
-                                      MaterialTheme.typography.labelMedium,
-                                  fontWeight =
-                                      FontWeight.SemiBold,
-                                  color =
-                                      MaterialTheme.colorScheme.onPrimaryContainer,
-                                  modifier =
-                                      Modifier.padding(
-                                          horizontal = 10.dp,
-                                          vertical = 5.dp
-                                      )
+                                  text = "$activeCount",
+                                  style = MaterialTheme.typography.labelMedium,
+                                  fontWeight = FontWeight.SemiBold,
+                                  color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                  modifier = Modifier.padding(
+                                      horizontal = 10.dp,
+                                      vertical = 5.dp
+                                  )
                               )
                           }
                       }
                   }
 
                   Spacer(
-                      modifier =
-                          Modifier.height(12.dp)
+                      modifier = Modifier.height(12.dp)
                   )
 
                   Row(
-                      horizontalArrangement =
-                          Arrangement.spacedBy(8.dp)
+                      horizontalArrangement = Arrangement.spacedBy(8.dp)
                   ) {
                       FilterChip(
-                          selected =
-                              selectedCategory == 0,
+                          selected = selectedCategory == 0,
                           onClick = {
                               onCategoryChange(0)
                           },
@@ -637,8 +688,7 @@ jobs:
                       )
 
                       FilterChip(
-                          selected =
-                              selectedCategory == 1,
+                          selected = selectedCategory == 1,
                           onClick = {
                               onCategoryChange(1)
                           },
@@ -678,7 +728,7 @@ jobs:
           PY
 
       # ============================================================
-      # 检查修改结果
+      # 5. 检查修改结果
       # ============================================================
       - name: 检查修改结果
         shell: bash
@@ -708,16 +758,15 @@ jobs:
 
           echo
           echo "======================================"
-          echo "下载弹窗相关"
+          echo "下载弹窗"
           echo "======================================"
           grep -R -n \
             "本地下载\|请选择使用 Gopeed" \
-            app/src/main/kotlin \
-            | head -100
+            app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt
 
           echo
           echo "======================================"
-          echo "下载分类相关"
+          echo "下载分类"
           echo "======================================"
           grep -R -n \
             "DownloadCategoryBar\|进行中" \
@@ -731,7 +780,7 @@ jobs:
           git diff --check
 
       # ============================================================
-      # 单元测试
+      # 6. 单元测试
       # ============================================================
       - name: 运行单元测试
         shell: bash
@@ -743,11 +792,11 @@ jobs:
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             -PVERSION_NAME="1.0.0-gopeed-test" \
-            -PVERSION_CODE="9003" \
+            -PVERSION_CODE="9004" \
             testDebugUnitTest
 
       # ============================================================
-      # Lint
+      # 7. Lint
       # ============================================================
       - name: 运行 Android Lint
         shell: bash
@@ -759,11 +808,11 @@ jobs:
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             -PVERSION_NAME="1.0.0-gopeed-test" \
-            -PVERSION_CODE="9003" \
+            -PVERSION_CODE="9004" \
             lintDebug
 
       # ============================================================
-      # 构建 APK
+      # 8. 构建 APK
       # ============================================================
       - name: 构建测试 APK
         shell: bash
@@ -775,11 +824,11 @@ jobs:
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             -PVERSION_NAME="1.0.0-gopeed-test" \
-            -PVERSION_CODE="9003" \
+            -PVERSION_CODE="9004" \
             assembleDebug
 
       # ============================================================
-      # 整理 APK
+      # 9. 整理 APK
       # ============================================================
       - name: 整理 APK
         shell: bash
@@ -794,7 +843,7 @@ jobs:
 
           cp \
             "$APK" \
-            "output/StarAssistant-Gopeed-Choice-Test.apk"
+            "output/StarAssistant-Gopeed-Choice-Test-9004.apk"
 
           echo
           echo "======================================"
@@ -804,12 +853,12 @@ jobs:
           ls -lh output/
 
       # ============================================================
-      # 上传 APK
+      # 10. 上传 APK
       # ============================================================
       - name: 上传测试 APK
         uses: actions/upload-artifact@v7
         with:
-          name: StarAssistant-Gopeed-Choice-Test
-          path: output/StarAssistant-Gopeed-Choice-Test.apk
+          name: StarAssistant-Gopeed-Choice-Test-9004
+          path: output/StarAssistant-Gopeed-Choice-Test-9004.apk
           if-no-files-found: error
           retention-days: 7
