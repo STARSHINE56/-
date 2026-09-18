@@ -9,18 +9,30 @@ import org.json.JSONObject
 
 /**
  * GitHub Release 更新检测。
- * 真实实现：GET https://api.github.com/repos/STARSHINE56/-/releases/latest
+ * 真实实现：GET https://api.github.com/repos/STARSHINE56/StarAssistant/releases/latest
  */
 object UpdateChecker {
 
     private const val RELEASES_LATEST_URL =
-        "https://api.github.com/repos/STARSHINE56/-/releases/latest"
+        "https://api.github.com/repos/STARSHINE56/StarAssistant/releases/latest"
 
     /** GitHub 下载加速镜像站前缀（国内直连 GitHub 慢/失败时的兜底下载通道） */
     const val MIRROR_PREFIX = "https://cdn.gh-proxy.org/"
 
     /** 把 GitHub release 直链转成镜像站直链：https://cdn.gh-proxy.org/<原直链> */
-    fun mirrorUrl(url: String): String = MIRROR_PREFIX + url
+    fun mirrorUrl(url: String): String {
+    val clean = url.trim()
+
+    if (clean.isBlank()) {
+        return clean
+    }
+
+    return if (clean.startsWith(MIRROR_PREFIX)) {
+        clean
+    } else {
+        MIRROR_PREFIX + clean
+    }
+}
 
     data class Asset(
         val name: String,

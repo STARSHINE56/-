@@ -827,7 +827,7 @@ private fun GitHubCard(
             val intent = Intent(
                 Intent.ACTION_VIEW,
                 Uri.parse(
-                    "https://github.com/STARSHINE56/-"
+                    "https://github.com/STARSHINE56/StarAssistant"
                 )
             )
 
