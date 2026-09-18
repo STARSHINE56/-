@@ -1,4 +1,4 @@
-name: 测试版 - Gopeed 下载选择 + 下载页优化
+name: 测试版 - Gopeed 下载选择 9005
 
 on:
   workflow_dispatch:
@@ -66,7 +66,7 @@ jobs:
           chmod +x gradlew
 
       # ============================================================
-      # 1. 添加 Gopeed 下载调度
+      # 1. 添加 Gopeed 下载调度状态
       # ============================================================
       - name: 添加 Gopeed 下载调度
         shell: bash
@@ -80,13 +80,6 @@ jobs:
 
           import java.util.concurrent.atomic.AtomicLong
 
-          /**
-           * 临时记录下一次下载是否交给 Gopeed。
-           *
-           * 点击下载确认弹窗中的 Gopeed 后，
-           * 下一次 enqueue() 不进入本地下载数据库，
-           * 而是交给 Gopeed。
-           */
           object DownloadDispatchMode {
 
               private const val EXPIRE_MS =
@@ -122,7 +115,13 @@ jobs:
           EOF
 
       # ============================================================
-      # 2. DownloadManager 接入 Gopeed
+      # 2. 修改 DownloadManager
+      #
+      # 优先：
+      # ACTION_SEND + text/plain
+      #
+      # 回退：
+      # ACTION_VIEW + */*
       # ============================================================
       - name: 接入 Gopeed
         shell: bash
@@ -150,6 +149,15 @@ jobs:
 
           helper = r'''    /**
                * 将下载链接交给 Gopeed。
+               *
+               * 第一优先：
+               * ACTION_SEND
+               *
+               * Gopeed Android 当前明确注册了：
+               * android.intent.action.SEND
+               *
+               * 如果分享失败，
+               * 再回退到带 MIME 的 ACTION_VIEW。
                */
               private fun sendToGopeed(
                   url: String
@@ -158,11 +166,21 @@ jobs:
                       return false
                   }
 
-                  val intent =
+                  // --------------------------------------------
+                  // 方式 1：
+                  // ACTION_SEND
+                  // --------------------------------------------
+                  val sendIntent =
                       android.content.Intent(
-                          android.content.Intent.ACTION_VIEW,
-                          android.net.Uri.parse(url)
+                          android.content.Intent.ACTION_SEND
                       ).apply {
+                          type = "text/plain"
+
+                          putExtra(
+                              android.content.Intent.EXTRA_TEXT,
+                              url
+                          )
+
                           setPackage(
                               "com.gopeed.gopeed"
                           )
@@ -172,8 +190,10 @@ jobs:
                           )
                       }
 
-                  return try {
-                      context.startActivity(intent)
+                  try {
+                      context.startActivity(
+                          sendIntent
+                      )
 
                       android.os.Handler(
                           context.mainLooper
@@ -185,36 +205,77 @@ jobs:
                           ).show()
                       }
 
-                      true
-                  } catch (
-                      e: android.content.ActivityNotFoundException
-                  ) {
-                      android.os.Handler(
-                          context.mainLooper
-                      ).post {
-                          android.widget.Toast.makeText(
-                              context,
-                              "未检测到 Gopeed，请先安装 Gopeed",
-                              android.widget.Toast.LENGTH_LONG
-                          ).show()
-                      }
-
-                      false
+                      return true
                   } catch (
                       e: Exception
                   ) {
+                      android.util.Log.w(
+                          "YunX-DL",
+                          "Gopeed ACTION_SEND failed: ${e.message}"
+                      )
+                  }
+
+                  // --------------------------------------------
+                  // 方式 2：
+                  // ACTION_VIEW
+                  //
+                  // Gopeed Manifest 的 HTTP/HTTPS intent-filter
+                  // 同时声明了 mimeType="*/*"
+                  // --------------------------------------------
+                  val viewIntent =
+                      android.content.Intent(
+                          android.content.Intent.ACTION_VIEW
+                      ).apply {
+                          setDataAndType(
+                              android.net.Uri.parse(url),
+                              "*/*"
+                          )
+
+                          setPackage(
+                              "com.gopeed.gopeed"
+                          )
+
+                          addFlags(
+                              android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                          )
+                      }
+
+                  try {
+                      context.startActivity(
+                          viewIntent
+                      )
+
                       android.os.Handler(
                           context.mainLooper
                       ).post {
                           android.widget.Toast.makeText(
                               context,
-                              "无法打开 Gopeed",
+                              "已发送到 Gopeed",
                               android.widget.Toast.LENGTH_SHORT
                           ).show()
                       }
 
-                      false
+                      return true
+                  } catch (
+                      e: Exception
+                  ) {
+                      android.util.Log.w(
+                          "YunX-DL",
+                          "Gopeed ACTION_VIEW failed: ${e.message}"
+                      )
                   }
+
+                  android.os.Handler(
+                      context.mainLooper
+                  ).post {
+                      android.widget.Toast.makeText(
+                          context,
+                          "无法打开 Gopeed，请确认已安装最新版 Gopeed",
+                          android.widget.Toast.LENGTH_LONG
+                      ).show()
+                  }
+
+                  return false
               }
 
 
@@ -234,8 +295,8 @@ jobs:
           new = """): Long {
 
                   /*
-                   * 如果用户刚刚选择 Gopeed，
-                   * 则不创建 StarAssistant 本地下载任务。
+                   * 用户在确认弹窗选择 Gopeed 时，
+                   * 本次不创建本地下载任务。
                    */
                   if (
                       DownloadDispatchMode.consumeGopeed()
@@ -271,12 +332,6 @@ jobs:
 
       # ============================================================
       # 3. 直接覆盖下载确认弹窗
-      #
-      # 原：
-      # 关闭    开始下载
-      #
-      # 改：
-      # 关闭    Gopeed    本地下载
       # ============================================================
       - name: 更新下载确认弹窗
         shell: bash
@@ -327,13 +382,6 @@ jobs:
           import com.yunx.app.data.download.DownloadDispatchMode
           import com.yunx.app.data.network.model.DownloadLink
 
-          /**
-           * 下载确认弹窗。
-           *
-           * 支持：
-           * - Gopeed 下载
-           * - 星辰助手本地下载
-           */
           @Composable
           fun DownloadLinkDialog(
               link: DownloadLink,
@@ -374,7 +422,7 @@ jobs:
                           }
 
                           Text(
-                              text = "请选择使用 Gopeed 或星辰助手本地下载。",
+                              text = "请选择下载方式。",
                               modifier = Modifier.padding(top = 12.dp),
                               style = MaterialTheme.typography.bodySmall,
                               color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -390,7 +438,9 @@ jobs:
                                   onDownload()
                               }
                           ) {
-                              Text("Gopeed")
+                              Text(
+                                  "Gopeed"
+                              )
                           }
 
                           Spacer(
@@ -413,7 +463,9 @@ jobs:
                                   modifier = Modifier.width(6.dp)
                               )
 
-                              Text("本地下载")
+                              Text(
+                                  "本地下载"
+                              )
                           }
                       }
                   },
@@ -425,7 +477,9 @@ jobs:
                               onDismiss()
                           }
                       ) {
-                          Text("关闭")
+                          Text(
+                              "关闭"
+                          )
                       }
                   },
 
@@ -448,8 +502,11 @@ jobs:
                   "TB"
               )
 
-              var value = bytes.toDouble()
-              var unit = 0
+              var value =
+                  bytes.toDouble()
+
+              var unit =
+                  0
 
               while (
                   value >= 1024.0 &&
@@ -459,7 +516,9 @@ jobs:
                   unit++
               }
 
-              return if (unit == 0) {
+              return if (
+                  unit == 0
+              ) {
                   "$bytes ${units[unit]}"
               } else {
                   String.format(
@@ -472,15 +531,8 @@ jobs:
           }
           EOF
 
-          echo
-          echo "DownloadLinkDialog.kt 已更新"
-
-          grep -n \
-            "Gopeed\|本地下载\|DownloadDispatchMode" \
-            app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt
-
       # ============================================================
-      # 4. 下载页增加「进行中 / 已完成」
+      # 4. 优化下载页面
       # ============================================================
       - name: 优化本地下载页面
         shell: bash
@@ -527,8 +579,6 @@ jobs:
               var pendingDelete by remember { mutableStateOf<DownloadTaskEntity?>(null) }
               var showDeleteAllConfirm by remember { mutableStateOf(false) }
 
-              // 0 = 进行中
-              // 1 = 已完成
               var downloadCategory by remember {
                   mutableStateOf(0)
               }
@@ -574,7 +624,7 @@ jobs:
                               }
                           )
 
-                          // 批量操作栏：全部暂停 / 全部开始 / 删除全部
+                          // 批量操作栏
                           DownloadBatchBar("""
 
           if old not in text:
@@ -721,14 +771,10 @@ jobs:
               text,
               encoding="utf-8"
           )
-
-          print(
-              "DownloadScreen 优化完成"
-          )
           PY
 
       # ============================================================
-      # 5. 检查修改结果
+      # 5. 检查修改
       # ============================================================
       - name: 检查修改结果
         shell: bash
@@ -736,47 +782,33 @@ jobs:
           set -e
 
           echo
-          echo "======================================"
-          echo "修改文件"
-          echo "======================================"
+          echo "========= 修改文件 ========="
           git status --short
 
           echo
-          echo "======================================"
-          echo "修改统计"
-          echo "======================================"
+          echo "========= 修改统计 ========="
           git diff --stat
 
           echo
-          echo "======================================"
-          echo "Gopeed 相关"
-          echo "======================================"
+          echo "========= Gopeed 调用 ========="
+
           grep -R -n \
-            "Gopeed" \
-            app/src/main/kotlin \
-            | head -100
+            "ACTION_SEND\|ACTION_VIEW\|com.gopeed.gopeed\|Gopeed" \
+            app/src/main/kotlin/com/yunx/app/data/download \
+            app/src/main/kotlin/com/yunx/app/ui/resolve \
+            | head -150
 
           echo
-          echo "======================================"
-          echo "下载弹窗"
-          echo "======================================"
-          grep -R -n \
-            "本地下载\|请选择使用 Gopeed" \
-            app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt
+          echo "========= 下载分类 ========="
 
-          echo
-          echo "======================================"
-          echo "下载分类"
-          echo "======================================"
-          grep -R -n \
-            "DownloadCategoryBar\|进行中" \
+          grep -n \
+            "DownloadCategoryBar\|进行中\|已完成" \
             app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt \
             | head -100
 
           echo
-          echo "======================================"
-          echo "diff 检查"
-          echo "======================================"
+          echo "========= diff check ========="
+
           git diff --check
 
       # ============================================================
@@ -791,8 +823,8 @@ jobs:
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            -PVERSION_NAME="1.0.0-gopeed-test" \
-            -PVERSION_CODE="9004" \
+            -PVERSION_NAME="1.0.0-gopeed-test-9005" \
+            -PVERSION_CODE="9005" \
             testDebugUnitTest
 
       # ============================================================
@@ -807,8 +839,8 @@ jobs:
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            -PVERSION_NAME="1.0.0-gopeed-test" \
-            -PVERSION_CODE="9004" \
+            -PVERSION_NAME="1.0.0-gopeed-test-9005" \
+            -PVERSION_CODE="9005" \
             lintDebug
 
       # ============================================================
@@ -823,8 +855,8 @@ jobs:
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            -PVERSION_NAME="1.0.0-gopeed-test" \
-            -PVERSION_CODE="9004" \
+            -PVERSION_NAME="1.0.0-gopeed-test-9005" \
+            -PVERSION_CODE="9005" \
             assembleDebug
 
       # ============================================================
@@ -843,12 +875,7 @@ jobs:
 
           cp \
             "$APK" \
-            "output/StarAssistant-Gopeed-Choice-Test-9004.apk"
-
-          echo
-          echo "======================================"
-          echo "APK 构建成功"
-          echo "======================================"
+            "output/StarAssistant-Gopeed-Test-9005.apk"
 
           ls -lh output/
 
@@ -858,7 +885,7 @@ jobs:
       - name: 上传测试 APK
         uses: actions/upload-artifact@v7
         with:
-          name: StarAssistant-Gopeed-Choice-Test-9004
-          path: output/StarAssistant-Gopeed-Choice-Test-9004.apk
+          name: StarAssistant-Gopeed-Test-9005
+          path: output/StarAssistant-Gopeed-Test-9005.apk
           if-no-files-found: error
           retention-days: 7
