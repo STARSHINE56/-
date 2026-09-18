@@ -1,4 +1,4 @@
-name: 测试保存与下载图标
+name: 保存与下载图标
 
 on:
   workflow_dispatch:
