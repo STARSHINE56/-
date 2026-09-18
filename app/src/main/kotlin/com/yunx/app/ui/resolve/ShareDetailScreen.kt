@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.InsertDriveFile
@@ -715,11 +716,14 @@ internal fun ShareFileRow(
                 )
             }
             if (onSave != null) {
-                IconButton(onClick = onSave, modifier = Modifier.size(36.dp)) {
+                IconButton(
+                    onClick = onSave,
+                    modifier = Modifier.size(40.dp)
+                ) {
                     Icon(
-                        imageVector = Icons.Outlined.SaveAlt,
-                        contentDescription = "转存",
-                        modifier = Modifier.size(18.dp),
+                        imageVector = Icons.Outlined.CloudUpload,
+                        contentDescription = "保存到网盘",
+                        modifier = Modifier.size(21.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -734,11 +738,25 @@ internal fun ShareFileRow(
                     )
                 }
             }
-            Icon(
-                imageVector = Icons.Outlined.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline
-            )
+            if (file.isdir) {
+                Icon(
+                    imageVector = Icons.Outlined.ChevronRight,
+                    contentDescription = "进入文件夹",
+                    tint = MaterialTheme.colorScheme.outline
+                )
+            } else {
+                IconButton(
+                    onClick = onClick,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Download,
+                        contentDescription = "下载",
+                        modifier = Modifier.size(21.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }
