@@ -1,4 +1,4 @@
-name: 测试版 - Gopeed 下载选择 9005
+name: 测试版 - Gopeed 全平台下载 9006
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ env:
 
 jobs:
   build:
-    name: 构建 Gopeed 下载选择测试版
+    name: 构建 Gopeed 全平台测试版
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -66,7 +66,7 @@ jobs:
           chmod +x gradlew
 
       # ============================================================
-      # 1. 添加 Gopeed 下载调度状态
+      # 1. 下载方式临时状态
       # ============================================================
       - name: 添加 Gopeed 下载调度
         shell: bash
@@ -80,6 +80,11 @@ jobs:
 
           import java.util.concurrent.atomic.AtomicLong
 
+          /**
+           * 标记下一次下载是否交给 Gopeed。
+           *
+           * 只在短时间内有效，避免异常流程污染后续下载。
+           */
           object DownloadDispatchMode {
 
               private const val EXPIRE_MS =
@@ -115,15 +120,447 @@ jobs:
           EOF
 
       # ============================================================
-      # 2. 修改 DownloadManager
+      # 2. 全平台 Gopeed 调度器
       #
       # 优先：
-      # ACTION_SEND + text/plain
+      # gopeed:///create?params=BASE64_JSON
+      #
+      # JSON 中包含：
+      # - URL
+      # - HTTP headers
+      # - 文件名
+      # - 连接数
       #
       # 回退：
-      # ACTION_VIEW + */*
+      # ACTION_SEND
+      # ACTION_VIEW
       # ============================================================
-      - name: 接入 Gopeed
+      - name: 创建 Gopeed 调度器
+        shell: bash
+        run: |
+          set -e
+
+          cat > \
+            app/src/main/kotlin/com/yunx/app/data/download/GopeedDispatcher.kt \
+            <<'EOF'
+          package com.yunx.app.data.download
+
+          import android.content.Context
+          import android.content.Intent
+          import android.net.Uri
+          import android.util.Base64
+          import android.util.Log
+          import android.widget.Toast
+          import org.json.JSONArray
+          import org.json.JSONObject
+
+          object GopeedDispatcher {
+
+              private const val TAG =
+                  "StarAssistant-Gopeed"
+
+              private const val GOPEED_PACKAGE =
+                  "com.gopeed.gopeed"
+
+              /**
+               * 把完整 HTTP 下载任务交给 Gopeed。
+               */
+              fun dispatch(
+                  context: Context,
+                  url: String,
+                  fileName: String,
+                  headers: Map<String, String>,
+                  platform: String = ""
+              ): Boolean {
+
+                  if (url.isBlank()) {
+                      toast(
+                          context,
+                          "下载链接为空"
+                      )
+
+                      return false
+                  }
+
+                  /*
+                   * 第一优先：
+                   *
+                   * Gopeed 官方 deep link：
+                   *
+                   * gopeed:///create?params=...
+                   *
+                   * params 是 Base64 JSON。
+                   */
+                  if (
+                      openByDeepLink(
+                          context = context,
+                          url = url,
+                          fileName = fileName,
+                          headers = headers,
+                          platform = platform
+                      )
+                  ) {
+                      return true
+                  }
+
+                  /*
+                   * 第二优先：
+                   * ACTION_SEND。
+                   */
+                  if (
+                      openByShare(
+                          context,
+                          url
+                      )
+                  ) {
+                      return true
+                  }
+
+                  /*
+                   * 第三优先：
+                   * ACTION_VIEW。
+                   */
+                  if (
+                      openByView(
+                          context,
+                          url
+                      )
+                  ) {
+                      return true
+                  }
+
+                  toast(
+                      context,
+                      "无法打开 Gopeed，请确认已安装最新版 Gopeed",
+                      long = true
+                  )
+
+                  return false
+              }
+
+              private fun openByDeepLink(
+                  context: Context,
+                  url: String,
+                  fileName: String,
+                  headers: Map<String, String>,
+                  platform: String
+              ): Boolean {
+
+                  return try {
+                      val headerJson =
+                          JSONObject()
+
+                      headers.forEach {
+                          (key, value) ->
+
+                          headerJson.put(
+                              key,
+                              value
+                          )
+                      }
+
+                      val httpExtra =
+                          JSONObject().apply {
+                              put(
+                                  "method",
+                                  "GET"
+                              )
+
+                              put(
+                                  "header",
+                                  headerJson
+                              )
+
+                              put(
+                                  "body",
+                                  ""
+                              )
+                          }
+
+                      /*
+                       * Gopeed Request
+                       */
+                      val request =
+                          JSONObject().apply {
+                              put(
+                                  "url",
+                                  url
+                              )
+
+                              put(
+                                  "extra",
+                                  httpExtra
+                              )
+
+                              put(
+                                  "skipVerifyCert",
+                                  false
+                              )
+                          }
+
+                      /*
+                       * Gopeed Options
+                       */
+                      val optsExtra =
+                          JSONObject().apply {
+                              put(
+                                  "connections",
+                                  16
+                              )
+
+                              put(
+                                  "archivePassword",
+                                  ""
+                              )
+
+                              put(
+                                  "deleteAfterExtract",
+                                  false
+                              )
+                          }
+
+                      val options =
+                          JSONObject().apply {
+                              put(
+                                  "name",
+                                  fileName
+                              )
+
+                              put(
+                                  "path",
+                                  ""
+                              )
+
+                              put(
+                                  "asDefaultPath",
+                                  true
+                              )
+
+                              put(
+                                  "selectFiles",
+                                  JSONArray()
+                              )
+
+                              put(
+                                  "extra",
+                                  optsExtra
+                              )
+                          }
+
+                      /*
+                       * 完整 CreateTask
+                       */
+                      val createTask =
+                          JSONObject().apply {
+                              put(
+                                  "req",
+                                  request
+                              )
+
+                              put(
+                                  "opts",
+                                  options
+                              )
+                          }
+
+                      val json =
+                          createTask.toString()
+
+                      val base64 =
+                          Base64.encodeToString(
+                              json.toByteArray(
+                                  Charsets.UTF_8
+                              ),
+                              Base64.NO_WRAP
+                          )
+
+                      val encoded =
+                          Uri.encode(
+                              base64
+                          )
+
+                      val deepLink =
+                          Uri.parse(
+                              "gopeed:///create?params=$encoded"
+                          )
+
+                      Log.d(
+                          TAG,
+                          "dispatch deep link platform=$platform headers=${headers.keys}"
+                      )
+
+                      val intent =
+                          Intent(
+                              Intent.ACTION_VIEW,
+                              deepLink
+                          ).apply {
+                              setPackage(
+                                  GOPEED_PACKAGE
+                              )
+
+                              addFlags(
+                                  Intent.FLAG_ACTIVITY_NEW_TASK
+                              )
+                          }
+
+                      context.startActivity(
+                          intent
+                      )
+
+                      toast(
+                          context,
+                          "已发送到 Gopeed"
+                      )
+
+                      true
+                  } catch (
+                      e: Exception
+                  ) {
+                      Log.w(
+                          TAG,
+                          "deep link failed: ${e.message}"
+                      )
+
+                      false
+                  }
+              }
+
+              private fun openByShare(
+                  context: Context,
+                  url: String
+              ): Boolean {
+
+                  return try {
+                      val intent =
+                          Intent(
+                              Intent.ACTION_SEND
+                          ).apply {
+                              type =
+                                  "text/plain"
+
+                              putExtra(
+                                  Intent.EXTRA_TEXT,
+                                  url
+                              )
+
+                              setPackage(
+                                  GOPEED_PACKAGE
+                              )
+
+                              addFlags(
+                                  Intent.FLAG_ACTIVITY_NEW_TASK
+                              )
+                          }
+
+                      context.startActivity(
+                          intent
+                      )
+
+                      toast(
+                          context,
+                          "已发送到 Gopeed"
+                      )
+
+                      true
+                  } catch (
+                      e: Exception
+                  ) {
+                      Log.w(
+                          TAG,
+                          "ACTION_SEND failed: ${e.message}"
+                      )
+
+                      false
+                  }
+              }
+
+              private fun openByView(
+                  context: Context,
+                  url: String
+              ): Boolean {
+
+                  return try {
+                      val intent =
+                          Intent(
+                              Intent.ACTION_VIEW
+                          ).apply {
+
+                              setDataAndType(
+                                  Uri.parse(url),
+                                  "*/*"
+                              )
+
+                              setPackage(
+                                  GOPEED_PACKAGE
+                              )
+
+                              addFlags(
+                                  Intent.FLAG_ACTIVITY_NEW_TASK
+                              )
+                          }
+
+                      context.startActivity(
+                          intent
+                      )
+
+                      toast(
+                          context,
+                          "已发送到 Gopeed"
+                      )
+
+                      true
+                  } catch (
+                      e: Exception
+                  ) {
+                      Log.w(
+                          TAG,
+                          "ACTION_VIEW failed: ${e.message}"
+                      )
+
+                      false
+                  }
+              }
+
+              private fun toast(
+                  context: Context,
+                  message: String,
+                  long: Boolean = false
+              ) {
+                  android.os.Handler(
+                      context.mainLooper
+                  ).post {
+                      Toast.makeText(
+                          context,
+                          message,
+                          if (long) {
+                              Toast.LENGTH_LONG
+                          } else {
+                              Toast.LENGTH_SHORT
+                          }
+                      ).show()
+                  }
+              }
+          }
+          EOF
+
+      # ============================================================
+      # 3. 修改 DownloadManager
+      #
+      # 所有平台最终都会走 enqueue()
+      #
+      # 因此这里可以统一截获：
+      #
+      # 夸克
+      # UC
+      # 迅雷
+      # 百度
+      # 移动云盘
+      # 123
+      # 普通直链
+      #
+      # 并且 headers 参数就是各平台已经准备好的真实请求头。
+      # ============================================================
+      - name: DownloadManager 接入全平台 Gopeed
         shell: bash
         run: |
           set -e
@@ -139,155 +576,6 @@ jobs:
               encoding="utf-8"
           )
 
-          marker = """    /** 入队并立即开始下载 */
-              suspend fun enqueue("""
-
-          if marker not in text:
-              raise RuntimeError(
-                  "没有找到 DownloadManager.enqueue"
-              )
-
-          helper = r'''    /**
-               * 将下载链接交给 Gopeed。
-               *
-               * 第一优先：
-               * ACTION_SEND
-               *
-               * Gopeed Android 当前明确注册了：
-               * android.intent.action.SEND
-               *
-               * 如果分享失败，
-               * 再回退到带 MIME 的 ACTION_VIEW。
-               */
-              private fun sendToGopeed(
-                  url: String
-              ): Boolean {
-                  if (url.isBlank()) {
-                      return false
-                  }
-
-                  // --------------------------------------------
-                  // 方式 1：
-                  // ACTION_SEND
-                  // --------------------------------------------
-                  val sendIntent =
-                      android.content.Intent(
-                          android.content.Intent.ACTION_SEND
-                      ).apply {
-                          type = "text/plain"
-
-                          putExtra(
-                              android.content.Intent.EXTRA_TEXT,
-                              url
-                          )
-
-                          setPackage(
-                              "com.gopeed.gopeed"
-                          )
-
-                          addFlags(
-                              android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                          )
-                      }
-
-                  try {
-                      context.startActivity(
-                          sendIntent
-                      )
-
-                      android.os.Handler(
-                          context.mainLooper
-                      ).post {
-                          android.widget.Toast.makeText(
-                              context,
-                              "已发送到 Gopeed",
-                              android.widget.Toast.LENGTH_SHORT
-                          ).show()
-                      }
-
-                      return true
-                  } catch (
-                      e: Exception
-                  ) {
-                      android.util.Log.w(
-                          "YunX-DL",
-                          "Gopeed ACTION_SEND failed: ${e.message}"
-                      )
-                  }
-
-                  // --------------------------------------------
-                  // 方式 2：
-                  // ACTION_VIEW
-                  //
-                  // Gopeed Manifest 的 HTTP/HTTPS intent-filter
-                  // 同时声明了 mimeType="*/*"
-                  // --------------------------------------------
-                  val viewIntent =
-                      android.content.Intent(
-                          android.content.Intent.ACTION_VIEW
-                      ).apply {
-                          setDataAndType(
-                              android.net.Uri.parse(url),
-                              "*/*"
-                          )
-
-                          setPackage(
-                              "com.gopeed.gopeed"
-                          )
-
-                          addFlags(
-                              android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                          )
-                      }
-
-                  try {
-                      context.startActivity(
-                          viewIntent
-                      )
-
-                      android.os.Handler(
-                          context.mainLooper
-                      ).post {
-                          android.widget.Toast.makeText(
-                              context,
-                              "已发送到 Gopeed",
-                              android.widget.Toast.LENGTH_SHORT
-                          ).show()
-                      }
-
-                      return true
-                  } catch (
-                      e: Exception
-                  ) {
-                      android.util.Log.w(
-                          "YunX-DL",
-                          "Gopeed ACTION_VIEW failed: ${e.message}"
-                      )
-                  }
-
-                  android.os.Handler(
-                      context.mainLooper
-                  ).post {
-                      android.widget.Toast.makeText(
-                          context,
-                          "无法打开 Gopeed，请确认已安装最新版 Gopeed",
-                          android.widget.Toast.LENGTH_LONG
-                      ).show()
-                  }
-
-                  return false
-              }
-
-
-              /** 入队并立即开始下载 */
-              suspend fun enqueue('''
-
-          text = text.replace(
-              marker,
-              helper,
-              1
-          )
-
           old = """): Long {
                   // 文件名兜底：空白时从 URL 推导，避免保存时变成时间戳
                   val safeName = fileName.ifBlank {"""
@@ -295,13 +583,28 @@ jobs:
           new = """): Long {
 
                   /*
-                   * 用户在确认弹窗选择 Gopeed 时，
-                   * 本次不创建本地下载任务。
+                   * 如果下载确认页选择了 Gopeed，
+                   * 则把当前平台已经生成好的：
+                   *
+                   * URL
+                   * 文件名
+                   * Headers
+                   * 平台
+                   *
+                   * 全部交给 Gopeed。
+                   *
+                   * 不创建本地下载任务。
                    */
                   if (
                       DownloadDispatchMode.consumeGopeed()
                   ) {
-                      sendToGopeed(url)
+                      GopeedDispatcher.dispatch(
+                          context = context,
+                          url = url,
+                          fileName = fileName,
+                          headers = headers,
+                          platform = platform
+                      )
 
                       return -1L
                   }
@@ -311,7 +614,7 @@ jobs:
 
           if old not in text:
               raise RuntimeError(
-                  "没有找到 enqueue 函数体入口"
+                  "没有找到 DownloadManager.enqueue 函数体"
               )
 
           text = text.replace(
@@ -326,12 +629,12 @@ jobs:
           )
 
           print(
-              "DownloadManager Gopeed 接入完成"
+              "DownloadManager 全平台 Gopeed 接入完成"
           )
           PY
 
       # ============================================================
-      # 3. 直接覆盖下载确认弹窗
+      # 4. 直接覆盖下载确认弹窗
       # ============================================================
       - name: 更新下载确认弹窗
         shell: bash
@@ -407,25 +710,42 @@ jobs:
                   text = {
                       Column {
                           Text(
-                              text = "文件已准备好，可以开始下载。",
-                              style = MaterialTheme.typography.bodyMedium,
-                              color = MaterialTheme.colorScheme.onSurfaceVariant
+                              text =
+                                  "文件已准备好，可以开始下载。",
+                              style =
+                                  MaterialTheme.typography.bodyMedium,
+                              color =
+                                  MaterialTheme.colorScheme.onSurfaceVariant
                           )
 
-                          if (link.size > 0L) {
+                          if (
+                              link.size > 0L
+                          ) {
                               Text(
-                                  text = "大小：${formatFileSize(link.size)}",
-                                  modifier = Modifier.padding(top = 8.dp),
-                                  style = MaterialTheme.typography.bodySmall,
-                                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                                  text =
+                                      "大小：${formatFileSize(link.size)}",
+                                  modifier =
+                                      Modifier.padding(
+                                          top = 8.dp
+                                      ),
+                                  style =
+                                      MaterialTheme.typography.bodySmall,
+                                  color =
+                                      MaterialTheme.colorScheme.onSurfaceVariant
                               )
                           }
 
                           Text(
-                              text = "请选择下载方式。",
-                              modifier = Modifier.padding(top = 12.dp),
-                              style = MaterialTheme.typography.bodySmall,
-                              color = MaterialTheme.colorScheme.onSurfaceVariant
+                              text =
+                                  "请选择本地下载或发送到 Gopeed。",
+                              modifier =
+                                  Modifier.padding(
+                                      top = 12.dp
+                                  ),
+                              style =
+                                  MaterialTheme.typography.bodySmall,
+                              color =
+                                  MaterialTheme.colorScheme.onSurfaceVariant
                           )
                       }
                   },
@@ -434,7 +754,9 @@ jobs:
                       Row {
                           TextButton(
                               onClick = {
-                                  DownloadDispatchMode.requestGopeed()
+                                  DownloadDispatchMode
+                                      .requestGopeed()
+
                                   onDownload()
                               }
                           ) {
@@ -444,23 +766,36 @@ jobs:
                           }
 
                           Spacer(
-                              modifier = Modifier.width(6.dp)
+                              modifier =
+                                  Modifier.width(
+                                      6.dp
+                                  )
                           )
 
                           Button(
                               onClick = {
-                                  DownloadDispatchMode.clear()
+                                  DownloadDispatchMode
+                                      .clear()
+
                                   onDownload()
                               }
                           ) {
                               Icon(
-                                  imageVector = Icons.Outlined.Download,
-                                  contentDescription = null,
-                                  modifier = Modifier.size(16.dp)
+                                  imageVector =
+                                      Icons.Outlined.Download,
+                                  contentDescription =
+                                      null,
+                                  modifier =
+                                      Modifier.size(
+                                          16.dp
+                                      )
                               )
 
                               Spacer(
-                                  modifier = Modifier.width(6.dp)
+                                  modifier =
+                                      Modifier.width(
+                                          6.dp
+                                      )
                               )
 
                               Text(
@@ -473,7 +808,9 @@ jobs:
                   dismissButton = {
                       TextButton(
                           onClick = {
-                              DownloadDispatchMode.clear()
+                              DownloadDispatchMode
+                                  .clear()
+
                               onDismiss()
                           }
                       ) {
@@ -483,24 +820,29 @@ jobs:
                       }
                   },
 
-                  modifier = modifier
+                  modifier =
+                      modifier
               )
           }
 
           private fun formatFileSize(
               bytes: Long
           ): String {
-              if (bytes <= 0L) {
+
+              if (
+                  bytes <= 0L
+              ) {
                   return "未知"
               }
 
-              val units = arrayOf(
-                  "B",
-                  "KB",
-                  "MB",
-                  "GB",
-                  "TB"
-              )
+              val units =
+                  arrayOf(
+                      "B",
+                      "KB",
+                      "MB",
+                      "GB",
+                      "TB"
+                  )
 
               var value =
                   bytes.toDouble()
@@ -532,7 +874,7 @@ jobs:
           EOF
 
       # ============================================================
-      # 4. 优化下载页面
+      # 5. 本地下载页面继续保留 9005 的分类优化
       # ============================================================
       - name: 优化本地下载页面
         shell: bash
@@ -584,15 +926,19 @@ jobs:
               }
 
               val activeTasks = tasks.filter {
-                  it.status != DownloadTaskEntity.STATUS_COMPLETED
+                  it.status !=
+                      DownloadTaskEntity.STATUS_COMPLETED
               }
 
               val completedTasks = tasks.filter {
-                  it.status == DownloadTaskEntity.STATUS_COMPLETED
+                  it.status ==
+                      DownloadTaskEntity.STATUS_COMPLETED
               }
 
               val visibleTasks =
-                  if (downloadCategory == 0) {
+                  if (
+                      downloadCategory == 0
+                  ) {
                       activeTasks
                   } else {
                       completedTasks
@@ -616,11 +962,15 @@ jobs:
           new = """            Column(modifier = Modifier.fillMaxSize()) {
 
                           DownloadCategoryBar(
-                              selectedCategory = downloadCategory,
-                              activeCount = activeTasks.size,
-                              completedCount = completedTasks.size,
+                              selectedCategory =
+                                  downloadCategory,
+                              activeCount =
+                                  activeTasks.size,
+                              completedCount =
+                                  completedTasks.size,
                               onCategoryChange = {
-                                  downloadCategory = it
+                                  downloadCategory =
+                                      it
                               }
                           )
 
@@ -671,64 +1021,99 @@ jobs:
                       )
               ) {
                   Row(
-                      modifier = Modifier.fillMaxWidth(),
-                      verticalAlignment = Alignment.CenterVertically
+                      modifier =
+                          Modifier.fillMaxWidth(),
+                      verticalAlignment =
+                          Alignment.CenterVertically
                   ) {
                       Column(
-                          modifier = Modifier.weight(1f)
+                          modifier =
+                              Modifier.weight(1f)
                       ) {
                           Text(
-                              text = "下载任务",
-                              style = MaterialTheme.typography.titleLarge,
-                              fontWeight = FontWeight.SemiBold
+                              text =
+                                  "下载任务",
+                              style =
+                                  MaterialTheme.typography.titleLarge,
+                              fontWeight =
+                                  FontWeight.SemiBold
                           )
 
                           Spacer(
-                              modifier = Modifier.height(2.dp)
+                              modifier =
+                                  Modifier.height(
+                                      2.dp
+                                  )
                           )
 
                           Text(
                               text =
-                                  if (activeCount > 0) {
+                                  if (
+                                      activeCount > 0
+                                  ) {
                                       "$activeCount 个任务正在等待或下载"
                                   } else {
                                       "当前没有进行中的下载"
                                   },
-                              style = MaterialTheme.typography.bodySmall,
-                              color = MaterialTheme.colorScheme.onSurfaceVariant
+                              style =
+                                  MaterialTheme.typography.bodySmall,
+                              color =
+                                  MaterialTheme.colorScheme.onSurfaceVariant
                           )
                       }
 
-                      if (activeCount > 0) {
+                      if (
+                          activeCount > 0
+                      ) {
                           Surface(
-                              shape = RoundedCornerShape(50),
-                              color = MaterialTheme.colorScheme.primaryContainer
+                              shape =
+                                  RoundedCornerShape(
+                                      50
+                                  ),
+                              color =
+                                  MaterialTheme.colorScheme.primaryContainer
                           ) {
                               Text(
-                                  text = "$activeCount",
-                                  style = MaterialTheme.typography.labelMedium,
-                                  fontWeight = FontWeight.SemiBold,
-                                  color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                  modifier = Modifier.padding(
-                                      horizontal = 10.dp,
-                                      vertical = 5.dp
-                                  )
+                                  text =
+                                      "$activeCount",
+                                  style =
+                                      MaterialTheme.typography.labelMedium,
+                                  fontWeight =
+                                      FontWeight.SemiBold,
+                                  color =
+                                      MaterialTheme.colorScheme.onPrimaryContainer,
+                                  modifier =
+                                      Modifier.padding(
+                                          horizontal =
+                                              10.dp,
+                                          vertical =
+                                              5.dp
+                                      )
                               )
                           }
                       }
                   }
 
                   Spacer(
-                      modifier = Modifier.height(12.dp)
+                      modifier =
+                          Modifier.height(
+                              12.dp
+                          )
                   )
 
                   Row(
-                      horizontalArrangement = Arrangement.spacedBy(8.dp)
+                      horizontalArrangement =
+                          Arrangement.spacedBy(
+                              8.dp
+                          )
                   ) {
                       FilterChip(
-                          selected = selectedCategory == 0,
+                          selected =
+                              selectedCategory == 0,
                           onClick = {
-                              onCategoryChange(0)
+                              onCategoryChange(
+                                  0
+                              )
                           },
                           label = {
                               Text(
@@ -738,9 +1123,12 @@ jobs:
                       )
 
                       FilterChip(
-                          selected = selectedCategory == 1,
+                          selected =
+                              selectedCategory == 1,
                           onClick = {
-                              onCategoryChange(1)
+                              onCategoryChange(
+                                  1
+                              )
                           },
                           label = {
                               Text(
@@ -771,10 +1159,14 @@ jobs:
               text,
               encoding="utf-8"
           )
+
+          print(
+              "DownloadScreen 优化完成"
+          )
           PY
 
       # ============================================================
-      # 5. 检查修改
+      # 6. 检查关键代码
       # ============================================================
       - name: 检查修改结果
         shell: bash
@@ -782,37 +1174,58 @@ jobs:
           set -e
 
           echo
-          echo "========= 修改文件 ========="
+          echo "=============================="
+          echo "修改文件"
+          echo "=============================="
+
           git status --short
 
           echo
-          echo "========= 修改统计 ========="
+          echo "=============================="
+          echo "修改统计"
+          echo "=============================="
+
           git diff --stat
 
           echo
-          echo "========= Gopeed 调用 ========="
+          echo "=============================="
+          echo "Gopeed Deep Link"
+          echo "=============================="
 
           grep -R -n \
-            "ACTION_SEND\|ACTION_VIEW\|com.gopeed.gopeed\|Gopeed" \
+            "gopeed:///create\|GopeedDispatcher\|ACTION_SEND\|ACTION_VIEW" \
             app/src/main/kotlin/com/yunx/app/data/download \
-            app/src/main/kotlin/com/yunx/app/ui/resolve \
             | head -150
 
           echo
-          echo "========= 下载分类 ========="
+          echo "=============================="
+          echo "Headers"
+          echo "=============================="
 
-          grep -n \
-            "DownloadCategoryBar\|进行中\|已完成" \
-            app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt \
-            | head -100
+          grep -R -n \
+            "headers = headers\|headerJson\|Cookie\|Referer\|Origin" \
+            app/src/main/kotlin/com/yunx/app/data/download \
+            app/src/main/kotlin/com/yunx/app/ui/viewmodel/ResolveViewModel.kt \
+            | head -150
 
           echo
-          echo "========= diff check ========="
+          echo "=============================="
+          echo "下载弹窗"
+          echo "=============================="
+
+          grep -n \
+            "Gopeed\|本地下载" \
+            app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt
+
+          echo
+          echo "=============================="
+          echo "diff check"
+          echo "=============================="
 
           git diff --check
 
       # ============================================================
-      # 6. 单元测试
+      # 7. 单元测试
       # ============================================================
       - name: 运行单元测试
         shell: bash
@@ -823,12 +1236,12 @@ jobs:
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            -PVERSION_NAME="1.0.0-gopeed-test-9005" \
-            -PVERSION_CODE="9005" \
+            -PVERSION_NAME="1.0.0-gopeed-test-9006" \
+            -PVERSION_CODE="9006" \
             testDebugUnitTest
 
       # ============================================================
-      # 7. Lint
+      # 8. Lint
       # ============================================================
       - name: 运行 Android Lint
         shell: bash
@@ -839,12 +1252,12 @@ jobs:
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            -PVERSION_NAME="1.0.0-gopeed-test-9005" \
-            -PVERSION_CODE="9005" \
+            -PVERSION_NAME="1.0.0-gopeed-test-9006" \
+            -PVERSION_CODE="9006" \
             lintDebug
 
       # ============================================================
-      # 8. 构建 APK
+      # 9. 构建 APK
       # ============================================================
       - name: 构建测试 APK
         shell: bash
@@ -855,12 +1268,12 @@ jobs:
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            -PVERSION_NAME="1.0.0-gopeed-test-9005" \
-            -PVERSION_CODE="9005" \
+            -PVERSION_NAME="1.0.0-gopeed-test-9006" \
+            -PVERSION_CODE="9006" \
             assembleDebug
 
       # ============================================================
-      # 9. 整理 APK
+      # 10. 整理 APK
       # ============================================================
       - name: 整理 APK
         shell: bash
@@ -875,17 +1288,19 @@ jobs:
 
           cp \
             "$APK" \
-            "output/StarAssistant-Gopeed-Test-9005.apk"
+            "output/StarAssistant-Gopeed-AllPlatform-9006.apk"
 
+          echo
+          echo "APK："
           ls -lh output/
 
       # ============================================================
-      # 10. 上传 APK
+      # 11. 上传 APK
       # ============================================================
       - name: 上传测试 APK
         uses: actions/upload-artifact@v7
         with:
-          name: StarAssistant-Gopeed-Test-9005
-          path: output/StarAssistant-Gopeed-Test-9005.apk
+          name: StarAssistant-Gopeed-AllPlatform-9006
+          path: output/StarAssistant-Gopeed-AllPlatform-9006.apk
           if-no-files-found: error
           retention-days: 7
