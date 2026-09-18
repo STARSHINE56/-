@@ -1,0 +1,489 @@
+name: 下载优化第一批
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  YUNX_USE_MIRROR: "false"
+
+concurrency:
+  group: download-optimization-batch1
+  cancel-in-progress: false
+
+jobs:
+  optimize:
+    name: 下载优化第一批
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: 安装 Android SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0"
+
+      - name: 配置构建环境
+        shell: bash
+        run: |
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+
+      - name: 应用下载优化第一批
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path(".")
+          download_dir = root / "app/src/main/kotlin/com/yunx/app/data/download"
+          db_dir = root / "app/src/main/kotlin/com/yunx/app/data/db"
+          test_dir = root / "app/src/test/kotlin/com/yunx/app/data/download"
+
+          def replace_once(path: Path, old: str, new: str):
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: 预期匹配 1 次，实际 {count} 次")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          source_file = download_dir / "CloudDownloadSource.kt"
+          source_file.write_text(r'''package com.yunx.app.data.download
+
+/**
+ * 统一下载源模型。
+ *
+ * Provider / 网盘解析层只负责生成下载源，下载核心只消费该模型。
+ * 第一阶段先持久化重新解析所需的文件身份和 HTTP 校验元数据，
+ * 后续用于临时直链失效后的安全刷新与断点续传。
+ */
+data class CloudDownloadSource(
+    val url: String,
+    val fileName: String,
+    val fileSize: Long = -1L,
+    val headers: Map<String, String> = emptyMap(),
+    val platform: String = DownloadPlatform.GENERIC,
+
+    /** 原网盘文件 ID；临时 URL 失效后重新取链的关键身份。 */
+    val sourceFileId: String = "",
+
+    /** 来源类型：后续使用 share / cloud / generic 区分重新解析策略。 */
+    val sourceType: String = "",
+
+    /** 临时直链预计过期时间（Unix 毫秒）；0 表示未知。 */
+    val urlExpiresAt: Long = 0L,
+
+    /** HTTP 实体标识；恢复下载时用于判断远端文件是否发生变化。 */
+    val etag: String = "",
+
+    /** HTTP Last-Modified；ETag 缺失时作为辅助校验。 */
+    val lastModified: String = ""
+)
+''', encoding="utf-8")
+
+          entity = db_dir / "DownloadTaskEntity.kt"
+          old = '''    /** 下载来源平台标识（用于按平台应用下载线程数设置）；通用/手动添加为空串 */
+    @ColumnInfo(defaultValue = "''")
+    val platform: String = "",
+    /** 下载完成时的平均速度（字节/秒）；完成态展示用，进行中为 0 */
+'''
+          new = '''    /** 下载来源平台标识（用于按平台应用下载线程数设置）；通用/手动添加为空串 */
+    @ColumnInfo(defaultValue = "''")
+    val platform: String = "",
+    /** 原网盘文件 ID：临时下载 URL 失效后可据此重新获取直链。 */
+    @ColumnInfo(defaultValue = "''")
+    val sourceFileId: String = "",
+    /** 来源类型：share / cloud / generic；为空表示旧任务或未知来源。 */
+    @ColumnInfo(defaultValue = "''")
+    val sourceType: String = "",
+    /** 临时下载 URL 预计过期时间（Unix 毫秒）；0 表示未知。 */
+    @ColumnInfo(defaultValue = "0")
+    val urlExpiresAt: Long = 0L,
+    /** 下载实体 ETag；恢复时用于检测远端内容是否变化。 */
+    @ColumnInfo(defaultValue = "''")
+    val etag: String = "",
+    /** 下载实体 Last-Modified；ETag 缺失时作为辅助校验。 */
+    @ColumnInfo(defaultValue = "''")
+    val lastModified: String = "",
+    /** 是否由用户主动暂停；系统中断/进程退出产生的暂停为 false。 */
+    @ColumnInfo(defaultValue = "0")
+    val manualPaused: Boolean = false,
+    /** 临时直链自动刷新次数；后续用于限制刷新循环。 */
+    @ColumnInfo(defaultValue = "0")
+    val refreshCount: Int = 0,
+    /** 下载完成时的平均速度（字节/秒）；完成态展示用，进行中为 0 */
+'''
+          replace_once(entity, old, new)
+
+          dao = db_dir / "DownloadTaskDao.kt"
+          replace_once(
+              dao,
+              '''    @Query("UPDATE download_task SET status = 2 WHERE status = 1 OR status = 0")
+    suspend fun markInterruptedAsPaused()
+
+    @Query("UPDATE download_task SET status = :status WHERE id = :id")
+''',
+              '''    @Query("UPDATE download_task SET status = 2, manualPaused = 0 WHERE status = 1 OR status = 0")
+    suspend fun markInterruptedAsPaused()
+
+    @Query("UPDATE download_task SET manualPaused = :manualPaused WHERE id = :id")
+    suspend fun updateManualPaused(id: Long, manualPaused: Boolean)
+
+    @Query(
+        "UPDATE download_task SET sourceFileId = :sourceFileId, sourceType = :sourceType, " +
+            "urlExpiresAt = :urlExpiresAt, etag = :etag, lastModified = :lastModified " +
+            "WHERE id = :id"
+    )
+    suspend fun updateSourceMetadata(
+        id: Long,
+        sourceFileId: String,
+        sourceType: String,
+        urlExpiresAt: Long,
+        etag: String,
+        lastModified: String
+    )
+
+    @Query("UPDATE download_task SET status = :status WHERE id = :id")
+''')
+
+          db = db_dir / "AppDatabase.kt"
+          replace_once(db, "    version = 14,\n", "    version = 15,\n")
+          replace_once(
+              db,
+              '''                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+''',
+              '''                    .addMigrations(
+                        MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
+                        MIGRATION_12_13,
+                        MIGRATION_13_14,
+                        MIGRATION_14_15
+                    )
+''')
+          replace_once(
+              db,
+              '''        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE download_task ADD COLUMN completedTime INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+''',
+              '''        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE download_task ADD COLUMN completedTime INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE download_task ADD COLUMN sourceFileId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN sourceType TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN urlExpiresAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN etag TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN lastModified TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN manualPaused INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN refreshCount INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+''')
+
+          manager = download_dir / "DownloadManager.kt"
+
+          old_sig = '''    suspend fun enqueue(
+        url: String,
+        fileName: String,
+        headers: Map<String, String> = emptyMap(),
+        /** 已知文件大小（字节）；-1 表示未知，需探测 */
+        size: Long = -1L,
+        /** 下载来源平台标识（按平台应用下载线程数设置）；通用/手动添加传空串 */
+        platform: String = "",
+        /** 下载成功完成后的清理回调（如删除网盘临时转存文件）；失败/取消不触发 */
+        onComplete: suspend () -> Unit = {}
+    ): Long {
+'''
+          new_sig = '''    suspend fun enqueue(
+        url: String,
+        fileName: String,
+        headers: Map<String, String> = emptyMap(),
+        /** 已知文件大小（字节）；-1 表示未知，需探测 */
+        size: Long = -1L,
+        /** 下载来源平台标识（按平台应用下载线程数设置）；通用/手动添加传空串 */
+        platform: String = "",
+        /** 原网盘文件 ID；临时 URL 失效后重新取链使用。 */
+        sourceFileId: String = "",
+        /** 来源类型：share / cloud / generic。 */
+        sourceType: String = "",
+        /** 临时 URL 预计过期时间（Unix 毫秒）；0 表示未知。 */
+        urlExpiresAt: Long = 0L,
+        /** HTTP ETag，用于断点恢复时校验远端实体。 */
+        etag: String = "",
+        /** HTTP Last-Modified，作为辅助实体校验。 */
+        lastModified: String = "",
+        /** 下载成功完成后的清理回调（如删除网盘临时转存文件）；失败/取消不触发 */
+        onComplete: suspend () -> Unit = {}
+    ): Long {
+'''
+          replace_once(manager, old_sig, new_sig)
+
+          replace_once(
+              manager,
+              '''                requestHeadersJson = encodeHeaders(headers),
+                platform = platform
+''',
+              '''                requestHeadersJson = encodeHeaders(headers),
+                platform = platform,
+                sourceFileId = sourceFileId,
+                sourceType = sourceType,
+                urlExpiresAt = urlExpiresAt,
+                etag = etag,
+                lastModified = lastModified
+''')
+
+          marker = '''        start(id, headers)
+        return id
+    }
+
+    /**
+     * 重新下载：用原直链新建任务（任务卡长按菜单「重新下载」）。
+'''
+          replacement = '''        start(id, headers)
+        return id
+    }
+
+    /**
+     * 统一下载源入队入口。
+     * 旧的参数式 enqueue 暂时保留，确保现有网盘页面不被一次性大改破坏。
+     */
+    suspend fun enqueue(
+        source: CloudDownloadSource,
+        onComplete: suspend () -> Unit = {}
+    ): Long = enqueue(
+        url = source.url,
+        fileName = source.fileName,
+        headers = source.headers,
+        size = source.fileSize,
+        platform = source.platform,
+        sourceFileId = source.sourceFileId,
+        sourceType = source.sourceType,
+        urlExpiresAt = source.urlExpiresAt,
+        etag = source.etag,
+        lastModified = source.lastModified,
+        onComplete = onComplete
+    )
+
+    /**
+     * 重新下载：用原直链新建任务（任务卡长按菜单「重新下载」）。
+'''
+          replace_once(manager, marker, replacement)
+
+          replace_once(
+              manager,
+              '''        enqueue(task.url, task.fileName, headers, task.totalSize, task.platform)
+        return true
+''',
+              '''        enqueue(
+            url = task.url,
+            fileName = task.fileName,
+            headers = headers,
+            size = task.totalSize,
+            platform = task.platform,
+            sourceFileId = task.sourceFileId,
+            sourceType = task.sourceType,
+            urlExpiresAt = task.urlExpiresAt,
+            etag = task.etag,
+            lastModified = task.lastModified
+        )
+        return true
+''')
+
+          replace_once(
+              manager,
+              '''        scope.launch {
+            // 等协程真正退出（确保没有半截写入）后，以磁盘 part/seg 真实大小为准回写进度：
+''',
+              '''        scope.launch {
+            dao.updateManualPaused(id, true)
+            // 等协程真正退出（确保没有半截写入）后，以磁盘 part/seg 真实大小为准回写进度：
+''')
+
+          replace_once(
+              manager,
+              '''        val task = dao.get(id) ?: return
+        dao.updateStatus(id, DownloadTaskEntity.STATUS_DOWNLOADING)
+''',
+              '''        val task = dao.get(id) ?: return
+        dao.updateManualPaused(id, false)
+        dao.updateStatus(id, DownloadTaskEntity.STATUS_DOWNLOADING)
+''')
+
+          test_dir.mkdir(parents=True, exist_ok=True)
+          (test_dir / "CloudDownloadSourceTest.kt").write_text(r'''package com.yunx.app.data.download
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class CloudDownloadSourceTest {
+
+    @Test
+    fun defaultMetadataIsBackwardCompatible() {
+        val source = CloudDownloadSource(
+            url = "https://example.com/a.bin",
+            fileName = "a.bin"
+        )
+
+        assertEquals(-1L, source.fileSize)
+        assertTrue(source.headers.isEmpty())
+        assertEquals(DownloadPlatform.GENERIC, source.platform)
+        assertEquals("", source.sourceFileId)
+        assertEquals("", source.sourceType)
+        assertEquals(0L, source.urlExpiresAt)
+        assertEquals("", source.etag)
+        assertEquals("", source.lastModified)
+    }
+
+    @Test
+    fun providerMetadataIsPreserved() {
+        val source = CloudDownloadSource(
+            url = "https://cdn.example.com/file",
+            fileName = "demo.bin",
+            fileSize = 123456L,
+            headers = mapOf("Referer" to "https://example.com/"),
+            platform = DownloadPlatform.PAN123,
+            sourceFileId = "file-123",
+            sourceType = "cloud",
+            urlExpiresAt = 123456789L,
+            etag = "\"abc\"",
+            lastModified = "Thu, 18 Sep 2026 12:00:00 GMT"
+        )
+
+        assertEquals("file-123", source.sourceFileId)
+        assertEquals("cloud", source.sourceType)
+        assertEquals(123456789L, source.urlExpiresAt)
+        assertEquals("\"abc\"", source.etag)
+        assertEquals("https://example.com/", source.headers["Referer"])
+    }
+}
+''', encoding="utf-8")
+
+          print("第一批修改已写入。")
+          PY
+
+      - name: 检查修改内容
+        shell: bash
+        run: |
+          git diff --check
+          git status --short
+          git diff --stat
+          test -f app/src/main/kotlin/com/yunx/app/data/download/CloudDownloadSource.kt
+          test -f app/src/test/kotlin/com/yunx/app/data/download/CloudDownloadSourceTest.kt
+
+      - name: 单元测试
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            testDebugUnitTest
+
+      - name: Android Lint
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            lintDebug
+
+      - name: 构建 Debug APK
+        shell: bash
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            assembleDebug
+
+      - name: 生成第一批结果说明
+        shell: bash
+        run: |
+          mkdir -p batch1-result
+          cp app/build/outputs/apk/debug/app-debug.apk batch1-result/星辰助手-下载优化第一批-test.apk
+
+          cat > batch1-result/REPORT.md <<'EOF'
+          # 星辰助手下载优化第一批
+
+          已自动完成并验证：
+
+          - CloudDownloadSource 统一下载源模型
+          - DownloadTaskEntity 保存 sourceFileId
+          - 保存 sourceType
+          - 保存 URL 预计过期时间
+          - 保存 ETag / Last-Modified
+          - 保存 manualPaused
+          - 保存 refreshCount
+          - Room 数据库 14 -> 15 无损迁移
+          - DownloadManager 新增 CloudDownloadSource 入队入口
+          - 旧 enqueue 调用继续兼容
+          - 重新下载会继承下载源元数据
+          - 主动暂停 / 意外中断开始区分
+          - 新增 CloudDownloadSource JVM 单元测试
+
+          本批次属于基础架构，不宣称已经实现 401/403 自动换链。
+          下一批将把六个网盘的下载入口接入 sourceFileId，并实现可测试的下载源刷新策略。
+
+          本工作流只有在 testDebugUnitTest、lintDebug、assembleDebug 全部成功后才提交代码。
+          EOF
+
+      - name: 上传测试 APK 和说明
+        uses: actions/upload-artifact@v7
+        with:
+          name: XingChen-Download-Optimization-Batch1
+          path: batch1-result/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 提交修改
+        shell: bash
+        run: |
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "没有需要提交的修改"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            app/src/main/kotlin/com/yunx/app/data/download/CloudDownloadSource.kt \
+            app/src/main/kotlin/com/yunx/app/data/download/DownloadManager.kt \
+            app/src/main/kotlin/com/yunx/app/data/db/DownloadTaskEntity.kt \
+            app/src/main/kotlin/com/yunx/app/data/db/DownloadTaskDao.kt \
+            app/src/main/kotlin/com/yunx/app/data/db/AppDatabase.kt \
+            app/src/test/kotlin/com/yunx/app/data/download/CloudDownloadSourceTest.kt
+
+          git commit -m "feat: add persistent cloud download source metadata"
+          git push origin HEAD:main
