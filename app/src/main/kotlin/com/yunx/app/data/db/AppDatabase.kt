@@ -11,7 +11,7 @@ import com.yunx.app.data.security.CredentialCipher
 
 @Database(
     entities = [QuarkAccountEntity::class, DownloadTaskEntity::class, UCAccountEntity::class, XunleiAccountEntity::class, BaiduAccountEntity::class, C139AccountEntity::class, Pan123AccountEntity::class, BookmarkEntity::class],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -52,7 +52,14 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "yunx.db"
                 )
-                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                    .addMigrations(
+                        MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
+                        MIGRATION_12_13,
+                        MIGRATION_13_14,
+                        MIGRATION_14_15
+                    )
                     // 早期开发版（1-8）无可靠 schema；从 v9 起必须保留凭证和下载任务
                     .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5, 6, 7, 8)
                     .build()
@@ -101,6 +108,18 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE download_task ADD COLUMN completedTime INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE download_task ADD COLUMN sourceFileId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN sourceType TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN urlExpiresAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN etag TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN lastModified TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN manualPaused INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN refreshCount INTEGER NOT NULL DEFAULT 0")
             }
         }
     }
