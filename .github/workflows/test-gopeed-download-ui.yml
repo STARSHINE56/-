@@ -1,4 +1,4 @@
-name: 测试版 - Gopeed 全平台下载 9006
+name: 测试版 - Gopeed 风格本地下载页 9011
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: starassistant-gopeed-download-test
+  group: starassistant-download-ui-9011
   cancel-in-progress: true
 
 env:
@@ -15,14 +15,20 @@ env:
 
 jobs:
   build:
-    name: 构建 Gopeed 全平台测试版
+    name: 构建下载页 9011 测试版
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
+      # ============================================================
+      # 1. 检出源码
+      # ============================================================
       - name: 检出源码
         uses: actions/checkout@v7
 
+      # ============================================================
+      # 2. Java 17
+      # ============================================================
       - name: 配置 Java 17
         uses: actions/setup-java@v6
         with:
@@ -30,6 +36,9 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      # ============================================================
+      # 3. Android SDK
+      # ============================================================
       - name: 配置 Android SDK
         uses: android-actions/setup-android@v4
 
@@ -49,6 +58,9 @@ jobs:
             "platforms;android-36" \
             "build-tools;35.0.0"
 
+      # ============================================================
+      # 4. Gradle
+      # ============================================================
       - name: 配置 Gradle
         shell: bash
         run: |
@@ -66,817 +78,18 @@ jobs:
           chmod +x gradlew
 
       # ============================================================
-      # 1. 下载方式临时状态
-      # ============================================================
-      - name: 添加 Gopeed 下载调度
-        shell: bash
-        run: |
-          set -e
-
-          cat > \
-            app/src/main/kotlin/com/yunx/app/data/download/DownloadDispatchMode.kt \
-            <<'EOF'
-          package com.yunx.app.data.download
-
-          import java.util.concurrent.atomic.AtomicLong
-
-          /**
-           * 标记下一次下载是否交给 Gopeed。
-           *
-           * 只在短时间内有效，避免异常流程污染后续下载。
-           */
-          object DownloadDispatchMode {
-
-              private const val EXPIRE_MS =
-                  15_000L
-
-              private val gopeedRequestedAt =
-                  AtomicLong(0L)
-
-              fun requestGopeed() {
-                  gopeedRequestedAt.set(
-                      System.currentTimeMillis()
-                  )
-              }
-
-              fun consumeGopeed(): Boolean {
-                  val requestedAt =
-                      gopeedRequestedAt.getAndSet(0L)
-
-                  if (requestedAt <= 0L) {
-                      return false
-                  }
-
-                  return (
-                      System.currentTimeMillis() -
-                          requestedAt
-                      ) <= EXPIRE_MS
-              }
-
-              fun clear() {
-                  gopeedRequestedAt.set(0L)
-              }
-          }
-          EOF
-
-      # ============================================================
-      # 2. 全平台 Gopeed 调度器
+      # 5. 优化本地下载页
       #
-      # 优先：
-      # gopeed:///create?params=BASE64_JSON
+      # 只修改 DownloadScreen.kt
       #
-      # JSON 中包含：
-      # - URL
-      # - HTTP headers
-      # - 文件名
-      # - 连接数
-      #
-      # 回退：
-      # ACTION_SEND
-      # ACTION_VIEW
+      # 不修改：
+      # DownloadManager
+      # ChunkDownloader
+      # DownloadService
+      # 数据库
+      # 各网盘下载逻辑
       # ============================================================
-      - name: 创建 Gopeed 调度器
-        shell: bash
-        run: |
-          set -e
-
-          cat > \
-            app/src/main/kotlin/com/yunx/app/data/download/GopeedDispatcher.kt \
-            <<'EOF'
-          package com.yunx.app.data.download
-
-          import android.content.Context
-          import android.content.Intent
-          import android.net.Uri
-          import android.util.Base64
-          import android.util.Log
-          import android.widget.Toast
-          import org.json.JSONArray
-          import org.json.JSONObject
-
-          object GopeedDispatcher {
-
-              private const val TAG =
-                  "StarAssistant-Gopeed"
-
-              private const val GOPEED_PACKAGE =
-                  "com.gopeed.gopeed"
-
-              /**
-               * 把完整 HTTP 下载任务交给 Gopeed。
-               */
-              fun dispatch(
-                  context: Context,
-                  url: String,
-                  fileName: String,
-                  headers: Map<String, String>,
-                  platform: String = ""
-              ): Boolean {
-
-                  if (url.isBlank()) {
-                      toast(
-                          context,
-                          "下载链接为空"
-                      )
-
-                      return false
-                  }
-
-                  /*
-                   * 第一优先：
-                   *
-                   * Gopeed 官方 deep link：
-                   *
-                   * gopeed:///create?params=...
-                   *
-                   * params 是 Base64 JSON。
-                   */
-                  if (
-                      openByDeepLink(
-                          context = context,
-                          url = url,
-                          fileName = fileName,
-                          headers = headers,
-                          platform = platform
-                      )
-                  ) {
-                      return true
-                  }
-
-                  /*
-                   * 第二优先：
-                   * ACTION_SEND。
-                   */
-                  if (
-                      openByShare(
-                          context,
-                          url
-                      )
-                  ) {
-                      return true
-                  }
-
-                  /*
-                   * 第三优先：
-                   * ACTION_VIEW。
-                   */
-                  if (
-                      openByView(
-                          context,
-                          url
-                      )
-                  ) {
-                      return true
-                  }
-
-                  toast(
-                      context,
-                      "无法打开 Gopeed，请确认已安装最新版 Gopeed",
-                      long = true
-                  )
-
-                  return false
-              }
-
-              private fun openByDeepLink(
-                  context: Context,
-                  url: String,
-                  fileName: String,
-                  headers: Map<String, String>,
-                  platform: String
-              ): Boolean {
-
-                  return try {
-                      val headerJson =
-                          JSONObject()
-
-                      headers.forEach {
-                          (key, value) ->
-
-                          headerJson.put(
-                              key,
-                              value
-                          )
-                      }
-
-                      val httpExtra =
-                          JSONObject().apply {
-                              put(
-                                  "method",
-                                  "GET"
-                              )
-
-                              put(
-                                  "header",
-                                  headerJson
-                              )
-
-                              put(
-                                  "body",
-                                  ""
-                              )
-                          }
-
-                      /*
-                       * Gopeed Request
-                       */
-                      val request =
-                          JSONObject().apply {
-                              put(
-                                  "url",
-                                  url
-                              )
-
-                              put(
-                                  "extra",
-                                  httpExtra
-                              )
-
-                              put(
-                                  "skipVerifyCert",
-                                  false
-                              )
-                          }
-
-                      /*
-                       * Gopeed Options
-                       */
-                      val optsExtra =
-                          JSONObject().apply {
-                              put(
-                                  "connections",
-                                  16
-                              )
-
-                              put(
-                                  "archivePassword",
-                                  ""
-                              )
-
-                              put(
-                                  "deleteAfterExtract",
-                                  false
-                              )
-                          }
-
-                      val options =
-                          JSONObject().apply {
-                              put(
-                                  "name",
-                                  fileName
-                              )
-
-                              put(
-                                  "path",
-                                  ""
-                              )
-
-                              put(
-                                  "asDefaultPath",
-                                  true
-                              )
-
-                              put(
-                                  "selectFiles",
-                                  JSONArray()
-                              )
-
-                              put(
-                                  "extra",
-                                  optsExtra
-                              )
-                          }
-
-                      /*
-                       * 完整 CreateTask
-                       */
-                      val createTask =
-                          JSONObject().apply {
-                              put(
-                                  "req",
-                                  request
-                              )
-
-                              put(
-                                  "opts",
-                                  options
-                              )
-                          }
-
-                      val json =
-                          createTask.toString()
-
-                      val base64 =
-                          Base64.encodeToString(
-                              json.toByteArray(
-                                  Charsets.UTF_8
-                              ),
-                              Base64.NO_WRAP
-                          )
-
-                      val encoded =
-                          Uri.encode(
-                              base64
-                          )
-
-                      val deepLink =
-                          Uri.parse(
-                              "gopeed:///create?params=$encoded"
-                          )
-
-                      Log.d(
-                          TAG,
-                          "dispatch deep link platform=$platform headers=${headers.keys}"
-                      )
-
-                      val intent =
-                          Intent(
-                              Intent.ACTION_VIEW,
-                              deepLink
-                          ).apply {
-                              setPackage(
-                                  GOPEED_PACKAGE
-                              )
-
-                              addFlags(
-                                  Intent.FLAG_ACTIVITY_NEW_TASK
-                              )
-                          }
-
-                      context.startActivity(
-                          intent
-                      )
-
-                      toast(
-                          context,
-                          "已发送到 Gopeed"
-                      )
-
-                      true
-                  } catch (
-                      e: Exception
-                  ) {
-                      Log.w(
-                          TAG,
-                          "deep link failed: ${e.message}"
-                      )
-
-                      false
-                  }
-              }
-
-              private fun openByShare(
-                  context: Context,
-                  url: String
-              ): Boolean {
-
-                  return try {
-                      val intent =
-                          Intent(
-                              Intent.ACTION_SEND
-                          ).apply {
-                              type =
-                                  "text/plain"
-
-                              putExtra(
-                                  Intent.EXTRA_TEXT,
-                                  url
-                              )
-
-                              setPackage(
-                                  GOPEED_PACKAGE
-                              )
-
-                              addFlags(
-                                  Intent.FLAG_ACTIVITY_NEW_TASK
-                              )
-                          }
-
-                      context.startActivity(
-                          intent
-                      )
-
-                      toast(
-                          context,
-                          "已发送到 Gopeed"
-                      )
-
-                      true
-                  } catch (
-                      e: Exception
-                  ) {
-                      Log.w(
-                          TAG,
-                          "ACTION_SEND failed: ${e.message}"
-                      )
-
-                      false
-                  }
-              }
-
-              private fun openByView(
-                  context: Context,
-                  url: String
-              ): Boolean {
-
-                  return try {
-                      val intent =
-                          Intent(
-                              Intent.ACTION_VIEW
-                          ).apply {
-
-                              setDataAndType(
-                                  Uri.parse(url),
-                                  "*/*"
-                              )
-
-                              setPackage(
-                                  GOPEED_PACKAGE
-                              )
-
-                              addFlags(
-                                  Intent.FLAG_ACTIVITY_NEW_TASK
-                              )
-                          }
-
-                      context.startActivity(
-                          intent
-                      )
-
-                      toast(
-                          context,
-                          "已发送到 Gopeed"
-                      )
-
-                      true
-                  } catch (
-                      e: Exception
-                  ) {
-                      Log.w(
-                          TAG,
-                          "ACTION_VIEW failed: ${e.message}"
-                      )
-
-                      false
-                  }
-              }
-
-              private fun toast(
-                  context: Context,
-                  message: String,
-                  long: Boolean = false
-              ) {
-                  android.os.Handler(
-                      context.mainLooper
-                  ).post {
-                      Toast.makeText(
-                          context,
-                          message,
-                          if (long) {
-                              Toast.LENGTH_LONG
-                          } else {
-                              Toast.LENGTH_SHORT
-                          }
-                      ).show()
-                  }
-              }
-          }
-          EOF
-
-      # ============================================================
-      # 3. 修改 DownloadManager
-      #
-      # 所有平台最终都会走 enqueue()
-      #
-      # 因此这里可以统一截获：
-      #
-      # 夸克
-      # UC
-      # 迅雷
-      # 百度
-      # 移动云盘
-      # 123
-      # 普通直链
-      #
-      # 并且 headers 参数就是各平台已经准备好的真实请求头。
-      # ============================================================
-      - name: DownloadManager 接入全平台 Gopeed
-        shell: bash
-        run: |
-          set -e
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path(
-              "app/src/main/kotlin/com/yunx/app/data/download/DownloadManager.kt"
-          )
-
-          text = path.read_text(
-              encoding="utf-8"
-          )
-
-          old = """): Long {
-                  // 文件名兜底：空白时从 URL 推导，避免保存时变成时间戳
-                  val safeName = fileName.ifBlank {"""
-
-          new = """): Long {
-
-                  /*
-                   * 如果下载确认页选择了 Gopeed，
-                   * 则把当前平台已经生成好的：
-                   *
-                   * URL
-                   * 文件名
-                   * Headers
-                   * 平台
-                   *
-                   * 全部交给 Gopeed。
-                   *
-                   * 不创建本地下载任务。
-                   */
-                  if (
-                      DownloadDispatchMode.consumeGopeed()
-                  ) {
-                      GopeedDispatcher.dispatch(
-                          context = context,
-                          url = url,
-                          fileName = fileName,
-                          headers = headers,
-                          platform = platform
-                      )
-
-                      return -1L
-                  }
-
-                  // 文件名兜底：空白时从 URL 推导，避免保存时变成时间戳
-                  val safeName = fileName.ifBlank {"""
-
-          if old not in text:
-              raise RuntimeError(
-                  "没有找到 DownloadManager.enqueue 函数体"
-              )
-
-          text = text.replace(
-              old,
-              new,
-              1
-          )
-
-          path.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-          print(
-              "DownloadManager 全平台 Gopeed 接入完成"
-          )
-          PY
-
-      # ============================================================
-      # 4. 直接覆盖下载确认弹窗
-      # ============================================================
-      - name: 更新下载确认弹窗
-        shell: bash
-        run: |
-          set -e
-
-          cat > \
-            app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt \
-            <<'EOF'
-          /*
-           * YunX (云析) - A network drive share-link parser and high-speed downloader for Android.
-           * Copyright (C) 2026 CYQawa
-           *
-           * This program is free software: you can redistribute it and/or modify
-           * it under the terms of the GNU Affero General Public License as published by
-           * the Free Software Foundation, either version 3 of the License, or
-           * (at your option) any later version.
-           *
-           * This program is distributed in the hope that it will be useful,
-           * but WITHOUT ANY WARRANTY; without even the implied warranty of
-           * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-           * GNU Affero General Public License for more details.
-           *
-           * You should have received a copy of the GNU Affero General Public License
-           * along with this program. If not, see <https://www.gnu.org/licenses/>.
-           */
-
-          package com.yunx.app.ui.resolve
-
-          import androidx.compose.foundation.layout.Column
-          import androidx.compose.foundation.layout.Row
-          import androidx.compose.foundation.layout.Spacer
-          import androidx.compose.foundation.layout.padding
-          import androidx.compose.foundation.layout.size
-          import androidx.compose.foundation.layout.width
-          import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.outlined.Download
-          import androidx.compose.material3.AlertDialog
-          import androidx.compose.material3.Button
-          import androidx.compose.material3.Icon
-          import androidx.compose.material3.MaterialTheme
-          import androidx.compose.material3.Text
-          import androidx.compose.material3.TextButton
-          import androidx.compose.runtime.Composable
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.text.style.TextOverflow
-          import androidx.compose.ui.unit.dp
-          import com.yunx.app.data.download.DownloadDispatchMode
-          import com.yunx.app.data.network.model.DownloadLink
-
-          @Composable
-          fun DownloadLinkDialog(
-              link: DownloadLink,
-              onDownload: () -> Unit,
-              onDismiss: () -> Unit,
-              modifier: Modifier = Modifier
-          ) {
-              AlertDialog(
-                  onDismissRequest = {
-                      DownloadDispatchMode.clear()
-                      onDismiss()
-                  },
-
-                  title = {
-                      Text(
-                          text = link.filename,
-                          style = MaterialTheme.typography.titleMedium,
-                          maxLines = 2,
-                          overflow = TextOverflow.Ellipsis
-                      )
-                  },
-
-                  text = {
-                      Column {
-                          Text(
-                              text =
-                                  "文件已准备好，可以开始下载。",
-                              style =
-                                  MaterialTheme.typography.bodyMedium,
-                              color =
-                                  MaterialTheme.colorScheme.onSurfaceVariant
-                          )
-
-                          if (
-                              link.size > 0L
-                          ) {
-                              Text(
-                                  text =
-                                      "大小：${formatFileSize(link.size)}",
-                                  modifier =
-                                      Modifier.padding(
-                                          top = 8.dp
-                                      ),
-                                  style =
-                                      MaterialTheme.typography.bodySmall,
-                                  color =
-                                      MaterialTheme.colorScheme.onSurfaceVariant
-                              )
-                          }
-
-                          Text(
-                              text =
-                                  "请选择本地下载或发送到 Gopeed。",
-                              modifier =
-                                  Modifier.padding(
-                                      top = 12.dp
-                                  ),
-                              style =
-                                  MaterialTheme.typography.bodySmall,
-                              color =
-                                  MaterialTheme.colorScheme.onSurfaceVariant
-                          )
-                      }
-                  },
-
-                  confirmButton = {
-                      Row {
-                          TextButton(
-                              onClick = {
-                                  DownloadDispatchMode
-                                      .requestGopeed()
-
-                                  onDownload()
-                              }
-                          ) {
-                              Text(
-                                  "Gopeed"
-                              )
-                          }
-
-                          Spacer(
-                              modifier =
-                                  Modifier.width(
-                                      6.dp
-                                  )
-                          )
-
-                          Button(
-                              onClick = {
-                                  DownloadDispatchMode
-                                      .clear()
-
-                                  onDownload()
-                              }
-                          ) {
-                              Icon(
-                                  imageVector =
-                                      Icons.Outlined.Download,
-                                  contentDescription =
-                                      null,
-                                  modifier =
-                                      Modifier.size(
-                                          16.dp
-                                      )
-                              )
-
-                              Spacer(
-                                  modifier =
-                                      Modifier.width(
-                                          6.dp
-                                      )
-                              )
-
-                              Text(
-                                  "本地下载"
-                              )
-                          }
-                      }
-                  },
-
-                  dismissButton = {
-                      TextButton(
-                          onClick = {
-                              DownloadDispatchMode
-                                  .clear()
-
-                              onDismiss()
-                          }
-                      ) {
-                          Text(
-                              "关闭"
-                          )
-                      }
-                  },
-
-                  modifier =
-                      modifier
-              )
-          }
-
-          private fun formatFileSize(
-              bytes: Long
-          ): String {
-
-              if (
-                  bytes <= 0L
-              ) {
-                  return "未知"
-              }
-
-              val units =
-                  arrayOf(
-                      "B",
-                      "KB",
-                      "MB",
-                      "GB",
-                      "TB"
-                  )
-
-              var value =
-                  bytes.toDouble()
-
-              var unit =
-                  0
-
-              while (
-                  value >= 1024.0 &&
-                  unit < units.lastIndex
-              ) {
-                  value /= 1024.0
-                  unit++
-              }
-
-              return if (
-                  unit == 0
-              ) {
-                  "$bytes ${units[unit]}"
-              } else {
-                  String.format(
-                      java.util.Locale.US,
-                      "%.2f %s",
-                      value,
-                      units[unit]
-                  )
-              }
-          }
-          EOF
-
-      # ============================================================
-      # 5. 本地下载页面继续保留 9005 的分类优化
-      # ============================================================
-      - name: 优化本地下载页面
+      - name: 应用 Gopeed 风格下载页
         shell: bash
         run: |
           set -e
@@ -892,6 +105,9 @@ jobs:
               encoding="utf-8"
           )
 
+          # ========================================================
+          # 1. FilterChip import
+          # ========================================================
           if (
               "import androidx.compose.material3.FilterChip"
               not in text
@@ -902,7 +118,7 @@ jobs:
 
               if marker not in text:
                   raise RuntimeError(
-                      "无法找到 FloatingActionButton import"
+                      "找不到 FloatingActionButton import"
                   )
 
               text = text.replace(
@@ -913,14 +129,20 @@ jobs:
                   1
               )
 
-          old = """    var showAddDialog by remember { mutableStateOf(false) }
+          # ========================================================
+          # 2. 添加分类状态、总速度
+          # ========================================================
+          old_state = """    var showAddDialog by remember { mutableStateOf(false) }
               var pendingDelete by remember { mutableStateOf<DownloadTaskEntity?>(null) }
               var showDeleteAllConfirm by remember { mutableStateOf(false) }"""
 
-          new = """    var showAddDialog by remember { mutableStateOf(false) }
+          new_state = """    var showAddDialog by remember { mutableStateOf(false) }
               var pendingDelete by remember { mutableStateOf<DownloadTaskEntity?>(null) }
               var showDeleteAllConfirm by remember { mutableStateOf(false) }
 
+              // 下载任务分类
+              // 0 = 进行中
+              // 1 = 已完成
               var downloadCategory by remember {
                   mutableStateOf(0)
               }
@@ -936,78 +158,143 @@ jobs:
               }
 
               val visibleTasks =
-                  if (
-                      downloadCategory == 0
-                  ) {
+                  if (downloadCategory == 0) {
                       activeTasks
                   } else {
                       completedTasks
+                  }
+
+              val totalRealtimeSpeed =
+                  activeTasks.sumOf { task ->
+                      stats[task.id]?.speed ?: 0L
                   }"""
 
-          if old not in text:
+          if old_state not in text:
               raise RuntimeError(
-                  "无法找到 DownloadScreen 状态区域"
+                  "找不到 DownloadScreen 状态区"
               )
 
           text = text.replace(
-              old,
-              new,
+              old_state,
+              new_state,
               1
           )
 
-          old = """            Column(modifier = Modifier.fillMaxSize()) {
+          # ========================================================
+          # 3. 顶部加入下载概览
+          # ========================================================
+          old_column = """            Column(modifier = Modifier.fillMaxSize()) {
                           // 批量操作栏：全部暂停 / 全部开始 / 删除全部
                           DownloadBatchBar("""
 
-          new = """            Column(modifier = Modifier.fillMaxSize()) {
+          new_column = """            Column(modifier = Modifier.fillMaxSize()) {
 
-                          DownloadCategoryBar(
-                              selectedCategory =
-                                  downloadCategory,
-                              activeCount =
-                                  activeTasks.size,
-                              completedCount =
-                                  completedTasks.size,
+                          DownloadOverviewHeader(
+                              selectedCategory = downloadCategory,
+                              activeCount = activeTasks.size,
+                              completedCount = completedTasks.size,
+                              totalSpeed = totalRealtimeSpeed,
                               onCategoryChange = {
-                                  downloadCategory =
-                                      it
+                                  downloadCategory = it
                               }
                           )
 
-                          // 批量操作栏
+                          // 批量操作栏：全部暂停 / 全部开始 / 删除全部
                           DownloadBatchBar("""
 
-          if old not in text:
+          if old_column not in text:
               raise RuntimeError(
-                  "无法找到 DownloadBatchBar 插入位置"
+                  "找不到 DownloadBatchBar 插入位置"
               )
 
           text = text.replace(
-              old,
-              new,
+              old_column,
+              new_column,
               1
           )
+
+          # ========================================================
+          # 4. 当前分类过滤根目录任务
+          # ========================================================
+          old_root = (
+              "val rootTasks = tasks.filter"
+          )
+
+          if old_root not in text:
+              raise RuntimeError(
+                  "找不到 rootTasks"
+              )
 
           text = text.replace(
-              """val rootTasks = tasks.filter { !it.fileName.contains('/') }""",
-              """val rootTasks = visibleTasks.filter { !it.fileName.contains('/') }""",
+              old_root,
+              "val rootTasks = visibleTasks.filter",
               1
           )
+
+          # ========================================================
+          # 5. 当前分类过滤文件夹任务
+          #
+          # 这里不再匹配完整多行代码，
+          # 只替换关键部分，解决 9010 报错。
+          # ========================================================
+          old_folder = (
+              "val folderGroups = tasks.filter"
+          )
+
+          if old_folder not in text:
+              raise RuntimeError(
+                  "找不到 folderGroups"
+              )
 
           text = text.replace(
-              """val folderGroups = tasks.filter { it.fileName.contains('/') }""",
-              """val folderGroups = visibleTasks.filter { it.fileName.contains('/') }""",
+              old_folder,
+              "val folderGroups = visibleTasks.filter",
               1
           )
 
-          marker = """@Composable
+          # ========================================================
+          # 6. 当前分类没有任务时显示空页面
+          # ========================================================
+          items_marker = (
+              "                    items(rootTasks, key = { it.id }) { task ->"
+          )
+
+          items_new = """                    if (visibleTasks.isEmpty()) {
+                                  item(
+                                      key = "download_category_empty"
+                                  ) {
+                                      DownloadCategoryEmptyState(
+                                          completed =
+                                              downloadCategory == 1
+                                      )
+                                  }
+                              }
+
+                              items(rootTasks, key = { it.id }) { task ->"""
+
+          if items_marker not in text:
+              raise RuntimeError(
+                  "找不到 rootTasks items"
+              )
+
+          text = text.replace(
+              items_marker,
+              items_new,
+              1
+          )
+
+          # ========================================================
+          # 7. 插入顶部组件
+          # ========================================================
+          function_marker = """@Composable
           private fun DownloadBatchBar("""
 
           component = r'''@Composable
-          private fun DownloadCategoryBar(
+          private fun DownloadOverviewHeader(
               selectedCategory: Int,
               activeCount: Int,
               completedCount: Int,
+              totalSpeed: Long,
               onCategoryChange: (Int) -> Unit
           ) {
               Column(
@@ -1031,8 +318,7 @@ jobs:
                               Modifier.weight(1f)
                       ) {
                           Text(
-                              text =
-                                  "下载任务",
+                              text = "下载任务",
                               style =
                                   MaterialTheme.typography.titleLarge,
                               fontWeight =
@@ -1041,19 +327,20 @@ jobs:
 
                           Spacer(
                               modifier =
-                                  Modifier.height(
-                                      2.dp
-                                  )
+                                  Modifier.height(3.dp)
                           )
 
                           Text(
                               text =
-                                  if (
-                                      activeCount > 0
-                                  ) {
-                                      "$activeCount 个任务正在等待或下载"
-                                  } else {
-                                      "当前没有进行中的下载"
+                                  when {
+                                      activeCount == 0 ->
+                                          "当前没有正在下载的任务"
+
+                                      totalSpeed > 0 ->
+                                          "$activeCount 个进行中 · ${formatSpeed(totalSpeed)}"
+
+                                      else ->
+                                          "$activeCount 个任务等待、暂停或失败"
                                   },
                               style =
                                   MaterialTheme.typography.bodySmall,
@@ -1062,33 +349,27 @@ jobs:
                           )
                       }
 
-                      if (
-                          activeCount > 0
-                      ) {
+                      if (totalSpeed > 0) {
                           Surface(
                               shape =
-                                  RoundedCornerShape(
-                                      50
-                                  ),
+                                  RoundedCornerShape(50),
                               color =
                                   MaterialTheme.colorScheme.primaryContainer
                           ) {
                               Text(
                                   text =
-                                      "$activeCount",
+                                      formatSpeed(totalSpeed),
+                                  modifier =
+                                      Modifier.padding(
+                                          horizontal = 10.dp,
+                                          vertical = 6.dp
+                                      ),
                                   style =
                                       MaterialTheme.typography.labelMedium,
                                   fontWeight =
                                       FontWeight.SemiBold,
                                   color =
-                                      MaterialTheme.colorScheme.onPrimaryContainer,
-                                  modifier =
-                                      Modifier.padding(
-                                          horizontal =
-                                              10.dp,
-                                          vertical =
-                                              5.dp
-                                      )
+                                      MaterialTheme.colorScheme.onPrimaryContainer
                               )
                           }
                       }
@@ -1096,24 +377,18 @@ jobs:
 
                   Spacer(
                       modifier =
-                          Modifier.height(
-                              12.dp
-                          )
+                          Modifier.height(12.dp)
                   )
 
                   Row(
                       horizontalArrangement =
-                          Arrangement.spacedBy(
-                              8.dp
-                          )
+                          Arrangement.spacedBy(8.dp)
                   ) {
                       FilterChip(
                           selected =
                               selectedCategory == 0,
                           onClick = {
-                              onCategoryChange(
-                                  0
-                              )
+                              onCategoryChange(0)
                           },
                           label = {
                               Text(
@@ -1126,9 +401,7 @@ jobs:
                           selected =
                               selectedCategory == 1,
                           onClick = {
-                              onCategoryChange(
-                                  1
-                              )
+                              onCategoryChange(1)
                           },
                           label = {
                               Text(
@@ -1142,85 +415,202 @@ jobs:
 
 
           @Composable
+          private fun DownloadCategoryEmptyState(
+              completed: Boolean
+          ) {
+              Column(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(
+                          vertical = 52.dp,
+                          horizontal = 24.dp
+                      ),
+                  horizontalAlignment =
+                      Alignment.CenterHorizontally
+              ) {
+                  Surface(
+                      modifier =
+                          Modifier.size(58.dp),
+                      shape =
+                          CircleShape,
+                      color =
+                          MaterialTheme.colorScheme.surfaceContainerHighest
+                  ) {
+                      Box(
+                          contentAlignment =
+                              Alignment.Center
+                      ) {
+                          Icon(
+                              imageVector =
+                                  if (completed) {
+                                      Icons.Outlined.InsertDriveFile
+                                  } else {
+                                      Icons.Outlined.Download
+                                  },
+                              contentDescription =
+                                  null,
+                              modifier =
+                                  Modifier.size(27.dp),
+                              tint =
+                                  MaterialTheme.colorScheme.onSurfaceVariant
+                          )
+                      }
+                  }
+
+                  Spacer(
+                      modifier =
+                          Modifier.height(14.dp)
+                  )
+
+                  Text(
+                      text =
+                          if (completed) {
+                              "暂无已完成任务"
+                          } else {
+                              "暂无进行中的下载"
+                          },
+                      style =
+                          MaterialTheme.typography.titleMedium,
+                      fontWeight =
+                          FontWeight.Medium
+                  )
+
+                  Spacer(
+                      modifier =
+                          Modifier.height(5.dp)
+                  )
+
+                  Text(
+                      text =
+                          if (completed) {
+                              "下载完成的文件会自动显示在这里"
+                          } else {
+                              "新任务会在这里显示进度、速度和剩余时间"
+                          },
+                      style =
+                          MaterialTheme.typography.bodySmall,
+                      color =
+                          MaterialTheme.colorScheme.onSurfaceVariant,
+                      textAlign =
+                          TextAlign.Center
+                  )
+              }
+          }
+
+
+          @Composable
           private fun DownloadBatchBar('''
 
-          if marker not in text:
+          if function_marker not in text:
               raise RuntimeError(
-                  "无法找到 DownloadBatchBar"
+                  "找不到 DownloadBatchBar 函数"
               )
 
           text = text.replace(
-              marker,
+              function_marker,
               component,
               1
           )
 
+          # ========================================================
+          # 8. 任务卡稍微紧凑
+          # ========================================================
+          text = text.replace(
+              "Column(modifier = Modifier.padding(14.dp)) {",
+              "Column(modifier = Modifier.padding(12.dp)) {",
+              1
+          )
+
+          # ========================================================
+          # 9. 保存
+          # ========================================================
           path.write_text(
               text,
               encoding="utf-8"
           )
 
           print(
-              "DownloadScreen 优化完成"
+              "DownloadScreen 9011 修改完成"
+          )
+
+          print(
+              "rootTasks visible:",
+              "val rootTasks = visibleTasks.filter"
+              in text
+          )
+
+          print(
+              "folderGroups visible:",
+              "val folderGroups = visibleTasks.filter"
+              in text
+          )
+
+          print(
+              "overview:",
+              "DownloadOverviewHeader("
+              in text
           )
           PY
 
       # ============================================================
-      # 6. 检查关键代码
+      # 6. 检查补丁
       # ============================================================
-      - name: 检查修改结果
+      - name: 检查下载页修改
         shell: bash
         run: |
           set -e
 
           echo
-          echo "=============================="
+          echo "======================================"
           echo "修改文件"
-          echo "=============================="
+          echo "======================================"
 
           git status --short
 
           echo
-          echo "=============================="
+          echo "======================================"
           echo "修改统计"
-          echo "=============================="
+          echo "======================================"
 
           git diff --stat
 
           echo
-          echo "=============================="
-          echo "Gopeed Deep Link"
-          echo "=============================="
-
-          grep -R -n \
-            "gopeed:///create\|GopeedDispatcher\|ACTION_SEND\|ACTION_VIEW" \
-            app/src/main/kotlin/com/yunx/app/data/download \
-            | head -150
-
-          echo
-          echo "=============================="
-          echo "Headers"
-          echo "=============================="
-
-          grep -R -n \
-            "headers = headers\|headerJson\|Cookie\|Referer\|Origin" \
-            app/src/main/kotlin/com/yunx/app/data/download \
-            app/src/main/kotlin/com/yunx/app/ui/viewmodel/ResolveViewModel.kt \
-            | head -150
-
-          echo
-          echo "=============================="
-          echo "下载弹窗"
-          echo "=============================="
+          echo "======================================"
+          echo "分类过滤"
+          echo "======================================"
 
           grep -n \
-            "Gopeed\|本地下载" \
-            app/src/main/kotlin/com/yunx/app/ui/resolve/DownloadLinkDialog.kt
+            "val rootTasks\|val folderGroups\|visibleTasks" \
+            app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt \
+            | head -50
 
           echo
-          echo "=============================="
+          echo "======================================"
+          echo "顶部概览"
+          echo "======================================"
+
+          grep -n \
+            "DownloadOverviewHeader\|totalRealtimeSpeed\|进行中\|已完成" \
+            app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt \
+            | head -100
+
+          echo
+          echo "======================================"
+          echo "确认下载核心未修改"
+          echo "======================================"
+
+          if git diff --name-only | \
+             grep -q "app/src/main/kotlin/com/yunx/app/data/download"; then
+            echo "错误：工作流修改了下载核心"
+            exit 1
+          else
+            echo "OK：下载核心没有修改"
+          fi
+
+          echo
+          echo "======================================"
           echo "diff check"
-          echo "=============================="
+          echo "======================================"
 
           git diff --check
 
@@ -1236,12 +626,12 @@ jobs:
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            -PVERSION_NAME="1.0.0-gopeed-test-9006" \
-            -PVERSION_CODE="9006" \
+            -PVERSION_NAME="1.0.0-download-ui-test-9011" \
+            -PVERSION_CODE="9011" \
             testDebugUnitTest
 
       # ============================================================
-      # 8. Lint
+      # 8. Android Lint
       # ============================================================
       - name: 运行 Android Lint
         shell: bash
@@ -1252,12 +642,12 @@ jobs:
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            -PVERSION_NAME="1.0.0-gopeed-test-9006" \
-            -PVERSION_CODE="9006" \
+            -PVERSION_NAME="1.0.0-download-ui-test-9011" \
+            -PVERSION_CODE="9011" \
             lintDebug
 
       # ============================================================
-      # 9. 构建 APK
+      # 9. 构建 Debug APK
       # ============================================================
       - name: 构建测试 APK
         shell: bash
@@ -1268,8 +658,8 @@ jobs:
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            -PVERSION_NAME="1.0.0-gopeed-test-9006" \
-            -PVERSION_CODE="9006" \
+            -PVERSION_NAME="1.0.0-download-ui-test-9011" \
+            -PVERSION_CODE="9011" \
             assembleDebug
 
       # ============================================================
@@ -1288,10 +678,13 @@ jobs:
 
           cp \
             "$APK" \
-            "output/StarAssistant-Gopeed-AllPlatform-9006.apk"
+            "output/StarAssistant-DownloadUI-9011.apk"
 
           echo
-          echo "APK："
+          echo "======================================"
+          echo "APK 构建完成"
+          echo "======================================"
+
           ls -lh output/
 
       # ============================================================
@@ -1300,7 +693,7 @@ jobs:
       - name: 上传测试 APK
         uses: actions/upload-artifact@v7
         with:
-          name: StarAssistant-Gopeed-AllPlatform-9006
-          path: output/StarAssistant-Gopeed-AllPlatform-9006.apk
+          name: StarAssistant-DownloadUI-9011
+          path: output/StarAssistant-DownloadUI-9011.apk
           if-no-files-found: error
           retention-days: 7
