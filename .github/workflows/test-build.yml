@@ -2,6 +2,18 @@ name: Test Build APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "*.gradle"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+      - "gradlew.bat"
+      - ".github/workflows/test-build.yml"
 
 permissions:
   contents: read
@@ -10,14 +22,14 @@ env:
   YUNX_USE_MIRROR: "false"
 
 concurrency:
-  group: android-test-build
+  group: android-test-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
-    name: Test and build debug APK
+    name: Test, build and make report
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     steps:
       - name: Check out source
@@ -34,11 +46,8 @@ jobs:
         shell: bash
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
           test -x "$SDKMANAGER"
-
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-36" \
@@ -47,58 +56,229 @@ jobs:
       - name: Configure debug build
         shell: bash
         run: |
-          sed -i \
-            '/aapt2FromMavenOverride/d' \
-            gradle.properties
-
-          printf \
-            'sdk.dir=%s\n' \
-            "$ANDROID_HOME" \
-            > local.properties
-
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           chmod +x gradlew
 
       - name: Run unit tests
+        id: unit
+        continue-on-error: true
         shell: bash
         run: |
+          set -o pipefail
+          mkdir -p ci-logs
           ./gradlew \
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            testDebugUnitTest
+            testDebugUnitTest 2>&1 | tee ci-logs/unit-test.txt
 
       - name: Run Android Lint
+        id: lint
+        continue-on-error: true
         shell: bash
         run: |
+          set -o pipefail
+          mkdir -p ci-logs
           ./gradlew \
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            lintDebug
+            lintDebug 2>&1 | tee ci-logs/lint.txt
 
       - name: Build debug APK
+        id: build
+        continue-on-error: true
         shell: bash
         run: |
+          set -o pipefail
+          mkdir -p ci-logs
           ./gradlew \
             --no-daemon \
             --console=plain \
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            assembleDebug
+            assembleDebug 2>&1 | tee ci-logs/build.txt
 
-      - name: Verify APK exists
+      - name: Create readable test report
+        if: always()
         shell: bash
+        env:
+          UNIT_OUTCOME: ${{ steps.unit.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
         run: |
+          mkdir -p report
+
+          cp ci-logs/unit-test.txt report/ 2>/dev/null || true
+          cp ci-logs/lint.txt report/ 2>/dev/null || true
+          cp ci-logs/build.txt report/ 2>/dev/null || true
+
+          if [ -d app/build/test-results/testDebugUnitTest ]; then
+            mkdir -p report/test-results
+            cp -R app/build/test-results/testDebugUnitTest/. report/test-results/ || true
+          fi
+
+          if [ -f app/build/reports/lint-results-debug.html ]; then
+            cp app/build/reports/lint-results-debug.html report/lint-results-debug.html
+          fi
+          if [ -f app/build/reports/lint-results-debug.xml ]; then
+            cp app/build/reports/lint-results-debug.xml report/lint-results-debug.xml
+          fi
+
           APK="app/build/outputs/apk/debug/app-debug.apk"
+          if [ -f "$APK" ]; then
+            cp "$APK" report/星辰助手-test.apk
+          fi
 
-          test -f "$APK"
+          python3 - <<'PY'
+          import json
+          import os
+          import glob
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
 
-          echo "APK build successful:"
-          ls -lh "$APK"
+          report_dir = Path("report")
+          unit = os.environ.get("UNIT_OUTCOME", "unknown")
+          lint = os.environ.get("LINT_OUTCOME", "unknown")
+          build = os.environ.get("BUILD_OUTCOME", "unknown")
 
-      - name: Upload debug APK
+          tests = failures = errors = skipped = 0
+          for p in glob.glob("app/build/test-results/testDebugUnitTest/*.xml"):
+              try:
+                  root = ET.parse(p).getroot()
+                  tests += int(root.attrib.get("tests", 0))
+                  failures += int(root.attrib.get("failures", 0))
+                  errors += int(root.attrib.get("errors", 0))
+                  skipped += int(root.attrib.get("skipped", 0))
+              except Exception:
+                  pass
+
+          def icon(v):
+              return "✅" if v == "success" else "❌" if v == "failure" else "⚠️"
+
+          commit = os.environ.get("GITHUB_SHA", "")
+          run_id = os.environ.get("GITHUB_RUN_ID", "")
+          ref = os.environ.get("GITHUB_REF_NAME", "")
+
+          verified = []
+          needs_device = [
+              "真实网盘登录/解析是否仍能正常使用",
+              "真实网盘临时直链过期后的自动刷新",
+              "不同网盘实际下载速度与限流表现",
+              "锁屏、切后台、厂商省电策略下的长期下载"
+          ]
+
+          if unit == "success":
+              verified.append("单元测试通过")
+          if lint == "success":
+              verified.append("Android Lint 通过")
+          if build == "success":
+              verified.append("Debug APK 构建成功")
+
+          data = {
+              "commit": commit,
+              "branch": ref,
+              "run_id": run_id,
+              "unit_tests": {
+                  "outcome": unit,
+                  "tests": tests,
+                  "failures": failures,
+                  "errors": errors,
+                  "skipped": skipped,
+              },
+              "lint": {"outcome": lint},
+              "build": {"outcome": build},
+              "apk_included": (report_dir / "星辰助手-test.apk").exists(),
+              "automatically_verified": verified,
+              "needs_real_device_verification": needs_device,
+          }
+          (report_dir / "report.json").write_text(
+              json.dumps(data, ensure_ascii=False, indent=2),
+              encoding="utf-8"
+          )
+
+          lines = [
+              "# 星辰助手自动测试报告",
+              "",
+              f"- Commit: `{commit}`",
+              f"- Branch: `{ref}`",
+              f"- Run ID: `{run_id}`",
+              "",
+              "## 自动测试结果",
+              "",
+              f"- {icon(unit)} 单元测试：**{unit}**（tests={tests}, failures={failures}, errors={errors}, skipped={skipped}）",
+              f"- {icon(lint)} Android Lint：**{lint}**",
+              f"- {icon(build)} Debug APK：**{build}**",
+              "",
+              "## 可以由这份报告确认的内容",
+              ""
+          ]
+
+          if verified:
+              lines += [f"- ✅ {x}" for x in verified]
+          else:
+              lines.append("- ❌ 当前没有自动验证通过的项目")
+
+          lines += [
+              "",
+              "## 仍需要真机/真实网盘环境确认",
+              "",
+          ]
+          lines += [f"- ⚠️ {x}" for x in needs_device]
+
+          lines += [
+              "",
+              "## 怎么反馈给 ChatGPT",
+              "",
+              "把本次 Actions 产物里的 **XingChen-Test-Report.zip** 上传到对话即可。",
+              "我可以直接读取 REPORT.md、report.json、测试日志和 APK 构建结果，判断哪些功能已确认正常、哪些需要继续修。",
+              "",
+              "## 文件说明",
+              "",
+              "- REPORT.md：给人看的总报告",
+              "- report.json：机器可读结果",
+              "- unit-test.txt：单元测试完整日志",
+              "- lint.txt：Lint 完整日志",
+              "- build.txt：构建完整日志",
+              "- test-results/：JUnit XML 结果（存在时）",
+              "- lint-results-debug.html/xml：Lint 报告（存在时）",
+              "- 星辰助手-test.apk：Debug 测试包（构建成功时）",
+          ]
+
+          (report_dir / "REPORT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+          echo "===== REPORT.md ====="
+          cat report/REPORT.md
+          cat report/REPORT.md >> "$GITHUB_STEP_SUMMARY"
+
+          (
+            cd report
+            zip -qr ../XingChen-Test-Report.zip .
+          )
+
+      - name: Upload readable test report
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: XingChen-Assistant-Debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: XingChen-Test-Report
+          path: |
+            XingChen-Test-Report.zip
+            report/**
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
+
+      - name: Mark workflow failed when checks fail
+        if: always()
+        shell: bash
+        env:
+          UNIT_OUTCOME: ${{ steps.unit.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          if [ "$UNIT_OUTCOME" != "success" ] || \
+             [ "$LINT_OUTCOME" != "success" ] || \
+             [ "$BUILD_OUTCOME" != "success" ]; then
+            echo "One or more checks failed. See XingChen-Test-Report artifact."
+            exit 1
+          fi
