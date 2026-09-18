@@ -240,11 +240,6 @@ class DownloadManager(
         size: Long = -1L,
         /** 下载来源平台标识（按平台应用下载线程数设置）；通用/手动添加传空串 */
         platform: String = "",
-        sourceFileId: String = "",
-        sourceType: String = "",
-        urlExpiresAt: Long = 0L,
-        etag: String = "",
-        lastModified: String = "",
         /** 下载成功完成后的清理回调（如删除网盘临时转存文件）；失败/取消不触发 */
         onComplete: suspend () -> Unit = {}
     ): Long {
@@ -259,12 +254,7 @@ class DownloadManager(
                 url = url,
                 fileName = safeName,
                 requestHeadersJson = encodeHeaders(headers),
-                platform = platform,
-                sourceFileId = sourceFileId,
-                sourceType = sourceType,
-                urlExpiresAt = urlExpiresAt,
-                etag = etag,
-                lastModified = lastModified
+                platform = platform
             )
         )
         // 保存请求头（Cookie/UA），暂停后恢复仍需携带
@@ -275,23 +265,6 @@ class DownloadManager(
         return id
     }
 
-    suspend fun enqueue(
-        source: CloudDownloadSource,
-        onComplete: suspend () -> Unit = {}
-    ): Long = enqueue(
-        url = source.url,
-        fileName = source.fileName,
-        headers = source.headers,
-        size = source.fileSize,
-        platform = source.platform,
-        sourceFileId = source.sourceFileId,
-        sourceType = source.sourceType,
-        urlExpiresAt = source.urlExpiresAt,
-        etag = source.etag,
-        lastModified = source.lastModified,
-        onComplete = onComplete
-    )
-
     /**
      * 重新下载：用原直链新建任务（任务卡长按菜单「重新下载」）。
      * 先做 Range 探测校验直链有效性：403/404/网络错误视为直链已过期，返回 false 由 UI 提示。
@@ -301,18 +274,7 @@ class DownloadManager(
         val headers = loadPersistedHeaders(id)
         val valid = runCatching { downloader.getTotalSize(task.url, headers) != null }.getOrDefault(false)
         if (!valid) return false
-        enqueue(
-            url = task.url,
-            fileName = task.fileName,
-            headers = headers,
-            size = task.totalSize,
-            platform = task.platform,
-            sourceFileId = task.sourceFileId,
-            sourceType = task.sourceType,
-            urlExpiresAt = task.urlExpiresAt,
-            etag = task.etag,
-            lastModified = task.lastModified
-        )
+        enqueue(task.url, task.fileName, headers, task.totalSize, task.platform)
         return true
     }
 
@@ -425,7 +387,6 @@ class DownloadManager(
         val deferred = synchronized(jobsLock) { activeJobs.remove(id) }
         _stats.update { it - id }
         scope.launch {
-            dao.updateManualPaused(id, true)
             // 等协程真正退出（确保没有半截写入）后，以磁盘 part/seg 真实大小为准回写进度：
             // 暂停瞬间最后一次 onBytes 可能被取消丢弃，DB 落后于磁盘 → 恢复时进度回跳
             deferred?.let { runCatching { it.await().cancelAndJoin() } }
