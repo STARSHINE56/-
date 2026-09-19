@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -205,6 +206,9 @@ fun SettingsScreen(
     }
     var showRetryDialog by remember {
         mutableStateOf(false)
+    }
+    var wifiOnly by remember {
+        mutableStateOf(settingsRepo.wifiOnlyDownload)
     }
     var keepLocked by remember {
         mutableStateOf(settingsRepo.keepDownloadWhenLocked)
@@ -383,6 +387,28 @@ fun SettingsScreen(
             },
             onClick = {
                 showRetryDialog = true
+            }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SettingsItem(
+            icon = Icons.Outlined.Wifi,
+            title = "仅 Wi-Fi 下载",
+            description = if (wifiOnly) {
+                "仅连接 Wi-Fi 时下载；切换到移动网络会等待 Wi-Fi，恢复后自动续传"
+            } else {
+                "Wi-Fi 和移动网络均可下载"
+            },
+            onClick = {
+                wifiOnly = !wifiOnly
+                settingsRepo.wifiOnlyDownload = wifiOnly
+            },
+            trailing = {
+                Switch(
+                    checked = wifiOnly,
+                    onCheckedChange = null
+                )
             }
         )
 

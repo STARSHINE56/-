@@ -20,6 +20,9 @@ interface DownloadTaskDao {
     @Query("SELECT * FROM download_task WHERE status = 0 OR status = 1 ORDER BY createTime ASC")
     suspend fun getInterruptedTasks(): List<DownloadTaskEntity>
 
+    @Query("SELECT id FROM download_task")
+    suspend fun getAllTaskIds(): List<Long>
+
     @Query("UPDATE download_task SET status = :status, downloadedSize = :downloadedSize, totalSize = :totalSize WHERE id = :id")
     suspend fun updateProgress(id: Long, status: Int, downloadedSize: Long, totalSize: Long)
 

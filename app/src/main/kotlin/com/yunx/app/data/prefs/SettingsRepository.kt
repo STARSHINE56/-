@@ -61,6 +61,13 @@ class SettingsRepository(context: Context) {
             prefs.edit().putInt("download_retry_count", value.coerceIn(0, 10)).apply()
         }
 
+    /** 仅 Wi-Fi 下载：开启后移动网络不会开始/继续大文件下载，切回 Wi-Fi 自动续传。 */
+    var wifiOnlyDownload: Boolean
+        get() = prefs.getBoolean("wifi_only_download", false)
+        set(value) {
+            prefs.edit().putBoolean("wifi_only_download", value).apply()
+        }
+
     /** 锁屏后保持下载：开启后下载时获取 WakeLock，并可引导加入「忽略电池优化」白名单（默认开启） */
     var keepDownloadWhenLocked: Boolean
         get() = prefs.getBoolean("keep_download_when_locked", true)

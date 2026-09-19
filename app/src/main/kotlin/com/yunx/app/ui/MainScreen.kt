@@ -236,7 +236,8 @@ fun MainScreen() {
             concurrencyProvider = { settings.maxConcurrentDownloads },
             speedLimitProvider = { settings.downloadSpeedLimit },
             retryCountProvider = { settings.downloadRetryCount },
-            // 锁屏保持下载 / 通知栏速度开关
+            // Wi-Fi only / 锁屏保持下载 / 通知栏速度开关
+            wifiOnlyProvider = { settings.wifiOnlyDownload },
             keepWhenLockedProvider = { settings.keepDownloadWhenLocked },
             showSpeedProvider = { settings.notificationShowSpeed }
         )

@@ -128,6 +128,42 @@ class DownloadService : Service() {
             }
         }
 
+        /** 下载完成后发一条非常驻通知；点击回到应用。 */
+        fun notifyCompleted(context: Context, fileName: String) {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                nm.getNotificationChannel(CHANNEL_ID) == null
+            ) {
+                nm.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ID, "下载任务", NotificationManager.IMPORTANCE_LOW)
+                )
+            }
+
+            val contentIntent = PendingIntent.getActivity(
+                context,
+                fileName.hashCode(),
+                Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(context, CHANNEL_ID)
+            } else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(context)
+            }
+
+            val notification = builder
+                .setSmallIcon(R.drawable.icon)
+                .setContentTitle("下载完成")
+                .setContentText(fileName)
+                .setContentIntent(contentIntent)
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .build()
+
+            nm.notify(2000 + (fileName.hashCode() and 0x3FFF), notification)
+        }
+
         /** 全部任务结束：停止前台服务（stopService 无后台启动限制，安全） */
         fun stop(context: Context) {
             context.stopService(Intent(context, DownloadService::class.java))

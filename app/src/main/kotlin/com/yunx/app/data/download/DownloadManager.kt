@@ -43,9 +43,10 @@ import kotlin.math.min
 
 /** 实时下载统计（用于 UI 展示速度/剩余时间/线程数） */
 data class DownloadStats(
-    val speed: Long = 0L,        // 字节/秒
+    val speed: Long = 0L,         // 字节/秒
     val remainMillis: Long = -1L, // 剩余时间（毫秒），未知为 -1
-    val chunkCount: Int = 1       // 分片（线程）数
+    val chunkCount: Int = 1,      // 分片（线程）数
+    val phase: String = ""         // 等待队列 / 等待网络 / 重新获取链接 / 下载中 / 合并中 / 保存中
 )
 
 private const val TAG = "YunX-DL"
@@ -118,6 +119,8 @@ class DownloadManager(
     private val speedLimitProvider: () -> Long = { 0L },
     /** 下载失败后自动重试次数提供者（默认 3，上限 10） */
     private val retryCountProvider: () -> Int = { 3 },
+    /** 仅 Wi-Fi 下载开关；开启时移动网络进入等待，切回 Wi-Fi 自动续传。 */
+    private val wifiOnlyProvider: () -> Boolean = { false },
     /** 锁屏后保持下载开关（开启时获取 WakeLock 维持 Wi-Fi/CPU） */
     private val keepWhenLockedProvider: () -> Boolean = { true },
     /** 通知栏显示下载速度开关（false 时仅显示通知，隐藏速度） */
@@ -228,6 +231,13 @@ class DownloadManager(
     /** 实时下载统计（速度/剩余时间/线程数） */
     private val _stats = MutableStateFlow<Map<Long, DownloadStats>>(emptyMap())
     val stats: StateFlow<Map<Long, DownloadStats>> = _stats.asStateFlow()
+
+    private fun updatePhase(id: Long, phase: String) {
+        _stats.update { current ->
+            val old = current[id] ?: DownloadStats()
+            current + (id to old.copy(phase = phase))
+        }
+    }
 
     /** 进度落盘节流（毫秒）：updateProgress 写库会触发全表 Flow 重发 → 主线程全列表重组；
      *  按字节（256KB）节流时高速下载每秒写库几十次，主线程重组洪峰 → ANR。
@@ -356,6 +366,7 @@ class DownloadManager(
             }
             val deferred = CompletableDeferred<Job>()
             activeJobs[id] = deferred
+            updatePhase(id, "等待队列")
             val job = scope.launch {
                 try {
                     // 用户明确开始/恢复：清除“手动暂停”标志和上一次失败文案。
@@ -538,9 +549,18 @@ class DownloadManager(
             ?: return true
         val network = manager.activeNetwork ?: return false
         val capabilities = manager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        val validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        if (!validated) return false
+        return !wifiOnlyProvider() ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
     }
+
+    private fun networkWaitText(): String =
+        if (wifiOnlyProvider()) "仅 Wi-Fi 下载：等待 Wi-Fi…" else "网络已断开，等待网络恢复…"
+
+    private fun networkWaitPhase(): String =
+        if (wifiOnlyProvider()) "等待 Wi-Fi" else "等待网络"
 
     /**
      * 网络断开时等待系统恢复网络；用户暂停/删除会取消当前协程并立即退出等待。
@@ -551,13 +571,15 @@ class DownloadManager(
         while (isTaskActive() && !isNetworkAvailable()) {
             if (!waiting) {
                 waiting = true
-                dao.updateError(id, "网络已断开，等待网络恢复…")
+                dao.updateError(id, networkWaitText())
+                updatePhase(id, networkWaitPhase())
                 Log.d(TAG, "networkWait: id=$id waiting")
             }
             delay(1000L)
         }
         if (waiting && isTaskActive()) {
             dao.updateError(id, "")
+            updatePhase(id, "等待队列")
             Log.d(TAG, "networkWait: id=$id recovered")
         }
     }
@@ -567,6 +589,7 @@ class DownloadManager(
      * 再次进入应用时把这些任务恢复到安全状态，并自动续传非手动暂停任务。
      */
     suspend fun recoverInterruptedTasks() {
+        cleanupOrphanTempFiles()
         val interrupted = dao.getInterruptedTasks()
         if (interrupted.isEmpty()) return
         Log.d(TAG, "recoverInterruptedTasks: count=${interrupted.size}")
@@ -584,11 +607,17 @@ class DownloadManager(
     }
 
     /** 等待并发许可：当前下载任务数 >= 上限时轮询等待（暂停/取消可退出等待） */
-    private suspend fun awaitConcurrencySlot() {
+    private suspend fun awaitConcurrencySlot(id: Long) {
         val max = concurrencyProvider().coerceAtLeast(1)
+        var queued = false
         while (isTaskActive() && activeDownloads.get() >= max) {
+            if (!queued) {
+                queued = true
+                updatePhase(id, "等待队列")
+            }
             delay(300)
         }
+        if (isTaskActive()) updatePhase(id, "检查下载源")
     }
 
     /**
@@ -604,7 +633,7 @@ class DownloadManager(
             awaitNetworkIfNeeded(id)
             if (!isTaskActive()) return
             // 并发许可：排队等待，直到有空闲下载槽位（或任务被暂停/取消）
-            awaitConcurrencySlot()
+            awaitConcurrencySlot(id)
             if (!isTaskActive()) return
             activeDownloads.incrementAndGet()
             try {
@@ -634,8 +663,9 @@ class DownloadManager(
                         continue
                     }
                     if (DownloadFailurePolicy.isNetworkFailure(e) && !isNetworkAvailable()) {
-                        dao.updateError(id, "网络已断开，等待网络恢复…")
-                        Log.d(TAG, "runTaskWithRetry: id=$id 网络断开，等待恢复后续传")
+                        dao.updateError(id, networkWaitText())
+                        updatePhase(id, networkWaitPhase())
+                        Log.d(TAG, "runTaskWithRetry: id=$id 网络不可用，等待恢复后续传")
                         continue
                     }
                     attempts++
@@ -662,6 +692,7 @@ class DownloadManager(
             return false
         }
 
+        updatePhase(id, "重新获取链接")
         val refreshed = runCatching { sourceRefresher(task) }
             .onFailure { Log.w(TAG, "refreshSource: id=$id 重新取链失败：${it.message}") }
             .getOrNull()
@@ -690,6 +721,7 @@ class DownloadManager(
         if (newSize != null) taskSizes[id] = newSize
         dao.updateError(id, "")
         Log.d(TAG, "refreshSource: id=$id reason=$reason count=${task.refreshCount + 1}")
+        updatePhase(id, "检查下载源")
         return true
     }
 
@@ -698,6 +730,7 @@ class DownloadManager(
         if (!isTaskActive()) return
         val task = dao.get(id) ?: return
         dao.updateStatus(id, DownloadTaskEntity.STATUS_DOWNLOADING)
+        updatePhase(id, "下载中")
         taskStartTimes[id] = System.currentTimeMillis()
         Log.d(TAG, "runTask: id=$id fileName=${task.fileName}")
 
@@ -756,7 +789,10 @@ class DownloadManager(
         Log.d(TAG, "分片规划: id=$id chunks=$chunkCount main=$mainPoolCount elasticStart=$elasticStart size=$chunkSize threads=$threadCount effectiveWorkers=$effectiveWorkers isXunlei=$isXunlei")
 
         // 注册实时统计：线程数 = 有效并发（受安全上限约束）
-        _stats.update { it + (id to DownloadStats(0L, -1L, effectiveWorkers)) }
+        _stats.update {
+            val phase = it[id]?.phase.orEmpty().ifBlank { "下载中" }
+            it + (id to DownloadStats(0L, -1L, effectiveWorkers, phase))
+        }
 
         // 统计已有 part/seg 大小（断点续传起点；主池 + 弹性区均按磁盘真实长度）
         val downloaded = AtomicLong(0)
@@ -1028,7 +1064,7 @@ class DownloadManager(
         if (!isTaskActive()) return
         dao.updateProgress(id, DownloadTaskEntity.STATUS_DOWNLOADING, task.downloadedSize, 0)
         if (!isTaskActive()) return
-        _stats.update { it + (id to DownloadStats(0L, -1L, 1)) }
+        _stats.update { it + (id to DownloadStats(0L, -1L, 1, "下载中")) }
         val chunkDir = chunkDirOf(id).apply { mkdirs() }
         val partFile = File(chunkDir, "part_0")
         val downloaded = AtomicLong(partFile.length())
@@ -1074,7 +1110,7 @@ class DownloadManager(
     /** HLS（m3u8 转码流，如 UC play）下载：拉取分片合并 → 保存 → 完成回调 */
     private suspend fun hlsDownload(id: Long, task: DownloadTaskEntity, headers: Map<String, String>) {
         if (!isTaskActive()) return
-        _stats.update { it + (id to DownloadStats(0L, -1L, 1)) }
+        _stats.update { it + (id to DownloadStats(0L, -1L, 1, "下载中")) }
         val hlsFile = File(context.cacheDir, "hls_$id")
         hlsFile.delete()
         val downloaded = AtomicLong(0)
@@ -1095,12 +1131,14 @@ class DownloadManager(
             hlsFile.delete()
             throw IllegalStateException("未授予存储权限，无法保存到下载目录")
         }
+        updatePhase(id, "保存中")
         val savedPath = withContext(Dispatchers.IO) {
             DownloadSaver.save(context, task.fileName, hlsFile, saveDirProvider())
         }
             ?: throw IllegalStateException("保存到下载目录失败")
         val hlsTotal = dao.get(id)?.totalSize ?: 0L
         completeWithAvg(id, savedPath, hlsTotal)
+        DownloadService.notifyCompleted(context, task.fileName)
         Log.d(TAG, "hlsDownload: id=$id 下载完成 savedPath=$savedPath size=${hlsFile.length()}")
         taskCallbacks.remove(id)?.let { cb -> runCatching { cb() } }
         _stats.update { it - id }
@@ -1127,6 +1165,7 @@ class DownloadManager(
             }
         }
         // 2) 合并
+        updatePhase(id, "合并中")
         // ★ 合并产物放内部缓存（data 分区，非 FUSE 挂载）：大文件 IO 快得多；保存完成即删
         val merged = File(context.cacheDir, "merged_$id")
         if (!downloader.mergeChunks(chunkFiles, merged)) {
@@ -1147,11 +1186,13 @@ class DownloadManager(
         // 5) 保存（自定义目录经 SAF 写入；默认目录走 MediaStore/传统路径）
         // ★ 同步阻塞拷贝必须切 IO 线程：任务跑在 Dispatchers.Default（CPU 池），
         //   大文件保存若占满 Default 线程会让整个下载器协程饿死（"100% 卡死保存不了"）
+        updatePhase(id, "保存中")
         val savedPath = withContext(Dispatchers.IO) {
             DownloadSaver.save(context, fileName, merged, saveDirProvider())
         }
             ?: throw IllegalStateException("保存到下载目录失败")
         completeWithAvg(id, savedPath, total)
+        DownloadService.notifyCompleted(context, fileName)
         Log.d(TAG, "finishDownload: id=$id 下载完成 savedPath=$savedPath size=${merged.length()}")
         taskCallbacks.remove(id)?.let { cb ->
             runCatching { cb() }
@@ -1272,6 +1313,33 @@ class DownloadManager(
                 throw IllegalStateException(
                     "合并文件临时空间不足：至少还需要 ${mergeNeed - mergeFree} 字节可用空间"
                 )
+            }
+        }
+    }
+
+    /**
+     * 只清理“不再对应任何数据库任务”的孤儿缓存，绝不删除仍存在任务的 part/seg。
+     */
+    private suspend fun cleanupOrphanTempFiles() = withContext(Dispatchers.IO) {
+        val liveIds = runCatching { dao.getAllTaskIds().toSet() }.getOrElse { return@withContext }
+        val root = File(cacheBase(), "download_tmp")
+        root.listFiles()?.forEach { child ->
+            val id = child.name.toLongOrNull()
+            if (id != null && id !in liveIds) {
+                runCatching { child.deleteRecursively() }
+            }
+        }
+
+        context.cacheDir.listFiles()?.forEach { file ->
+            val id = when {
+                file.name.startsWith("merged_") ->
+                    file.name.removePrefix("merged_").toLongOrNull()
+                file.name.startsWith("hls_") ->
+                    file.name.removePrefix("hls_").toLongOrNull()
+                else -> null
+            }
+            if (id != null && id !in liveIds) {
+                runCatching { file.deleteRecursively() }
             }
         }
     }

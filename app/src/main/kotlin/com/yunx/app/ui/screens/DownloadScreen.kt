@@ -992,7 +992,7 @@ private fun DownloadTaskCard(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = taskStatusLine(task),
+                        text = stats?.phase?.takeIf { it.isNotBlank() } ?: taskStatusLine(task),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1052,7 +1052,10 @@ private fun DownloadTaskCard(
                 Column {
                     if (isDownloading && stats != null && stats.speed > 0) {
                         Text(
-                            text = "${formatSpeed(stats.speed)} · 剩余 ${formatRemain(stats.remainMillis)} · ${stats.chunkCount} 线程",
+                            text = buildString {
+                                if (stats.phase.isNotBlank()) append("${stats.phase} · ")
+                                append("${formatSpeed(stats.speed)} · 剩余 ${formatRemain(stats.remainMillis)} · ${stats.chunkCount} 线程")
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
