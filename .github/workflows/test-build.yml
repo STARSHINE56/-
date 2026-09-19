@@ -2,28 +2,12 @@ name: Test Build APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "app/**"
-      - "gradle/**"
-      - "*.gradle"
-      - "*.gradle.kts"
-      - "gradle.properties"
-      - "gradlew"
-      - "gradlew.bat"
-      - ".github/workflows/test-build.yml"
 
 permissions:
   contents: read
 
 env:
   YUNX_USE_MIRROR: "false"
-
-concurrency:
-  group: android-test-build-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   test:
@@ -48,10 +32,7 @@ jobs:
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;35.0.0"
+          "$SDKMANAGER"             "platform-tools"             "platforms;android-36"             "build-tools;35.0.0"
 
       - name: Configure debug build
         shell: bash
@@ -67,11 +48,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p ci-logs
-          ./gradlew \
-            --no-daemon \
-            --console=plain \
-            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            testDebugUnitTest 2>&1 | tee ci-logs/unit-test.txt
+          ./gradlew             --no-daemon             --console=plain             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2"             testDebugUnitTest 2>&1 | tee ci-logs/unit-test.txt
 
       - name: Run Android Lint
         id: lint
@@ -80,11 +57,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p ci-logs
-          ./gradlew \
-            --no-daemon \
-            --console=plain \
-            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            lintDebug 2>&1 | tee ci-logs/lint.txt
+          ./gradlew             --no-daemon             --console=plain             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2"             lintDebug 2>&1 | tee ci-logs/lint.txt
 
       - name: Build debug APK
         id: build
@@ -93,11 +66,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p ci-logs
-          ./gradlew \
-            --no-daemon \
-            --console=plain \
-            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
-            assembleDebug 2>&1 | tee ci-logs/build.txt
+          ./gradlew             --no-daemon             --console=plain             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2"             assembleDebug 2>&1 | tee ci-logs/build.txt
 
       - name: Create readable test report
         if: always()
@@ -276,9 +245,7 @@ jobs:
           LINT_OUTCOME: ${{ steps.lint.outcome }}
           BUILD_OUTCOME: ${{ steps.build.outcome }}
         run: |
-          if [ "$UNIT_OUTCOME" != "success" ] || \
-             [ "$LINT_OUTCOME" != "success" ] || \
-             [ "$BUILD_OUTCOME" != "success" ]; then
+          if [ "$UNIT_OUTCOME" != "success" ] ||              [ "$LINT_OUTCOME" != "success" ] ||              [ "$BUILD_OUTCOME" != "success" ]; then
             echo "One or more checks failed. See XingChen-Test-Report artifact."
             exit 1
           fi
