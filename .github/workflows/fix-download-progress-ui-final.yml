@@ -1,0 +1,184 @@
+name: 修复下载进度重复显示
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  YUNX_USE_MIRROR: "false"
+
+jobs:
+  fix-download-progress-ui:
+    name: 修复下载进度重复 UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: 安装 Android SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0"
+
+      - name: 配置构建环境
+        shell: bash
+        run: |
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+
+      - name: 检查当前 UI 基线
+        shell: bash
+        run: |
+          FILE="app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt"
+          test -f "$FILE"
+          grep -q 'private fun taskStatusLine' "$FILE"
+          grep -q 'private fun progressText' "$FILE"
+          grep -q 'return "已下载 ${formatSize(shown)} / ${formatSize(task.totalSize)} · $percent%"' "$FILE"
+
+      - name: 修复重复进度
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt")
+          text = path.read_text(encoding="utf-8")
+
+          start_marker = "private fun taskStatusLine(\n"
+          end_marker = "\nprivate fun progressText(task: DownloadTaskEntity): String {"
+
+          start = text.find(start_marker)
+          if start < 0:
+              raise RuntimeError("taskStatusLine start not found")
+
+          end = text.find(end_marker, start)
+          if end < 0:
+              raise RuntimeError("progressText marker not found")
+
+          current = text[start:end]
+
+          required = [
+              '"等待中 · 等待其他任务"',
+              '"已暂停"',
+              '"失败"',
+              'DownloadTaskEntity.statusText(',
+              '${formatSize(shown)} / ${formatSize(task.totalSize)}',
+          ]
+          for token in required:
+              if token not in current:
+                  raise RuntimeError(f"unexpected taskStatusLine structure: missing {token}")
+
+          replacement = '''private fun taskStatusLine(
+              task: DownloadTaskEntity
+          ): String =
+              when (task.status) {
+                  DownloadTaskEntity.STATUS_PENDING ->
+                      "等待中 · 等待其他任务"
+
+                  DownloadTaskEntity.STATUS_PAUSED ->
+                      "已暂停"
+
+                  DownloadTaskEntity.STATUS_FAILED ->
+                      "失败"
+
+                  else ->
+                      DownloadTaskEntity.statusText(
+                          task.status
+                      )
+              }
+          '''
+
+          text = text[:start] + replacement + text[end:]
+          path.write_text(text, encoding="utf-8")
+
+          print("Removed duplicate size/progress text from taskStatusLine")
+          PY
+
+      - name: 检查修改结果
+        shell: bash
+        run: |
+          git diff --check
+
+          CHANGED="$(git diff --name-only)"
+          echo "$CHANGED"
+
+          if [ "$CHANGED" != "app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt" ]; then
+            echo "错误：只允许修改 DownloadScreen.kt"
+            exit 1
+          fi
+
+          FILE="app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt"
+
+          grep -q 'private fun taskStatusLine' "$FILE"
+          grep -q 'return "已下载 ${formatSize(shown)} / ${formatSize(task.totalSize)} · $percent%"' "$FILE"
+
+          STATUS_BLOCK="$(sed -n '/private fun taskStatusLine/,/private fun progressText/p' "$FILE")"
+          if printf '%s' "$STATUS_BLOCK" | grep -q 'formatSize(shown)'; then
+            echo "错误：状态行仍然包含文件大小"
+            exit 1
+          fi
+
+      - name: 单元测试
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            testDebugUnitTest
+
+      - name: Android Lint
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            lintDebug
+
+      - name: 构建 Debug APK
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            assembleDebug
+
+      - name: 上传测试 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: XingChen-Download-Progress-UI-Fix
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 提交修改
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt
+
+          if git diff --cached --quiet; then
+            echo "没有需要提交的修改"
+            exit 0
+          fi
+
+          git commit -m "fix: remove duplicated download progress text"
+          git push origin HEAD:main
