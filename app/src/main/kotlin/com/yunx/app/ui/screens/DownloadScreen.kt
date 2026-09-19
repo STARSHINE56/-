@@ -1144,8 +1144,8 @@ private fun DownloadTaskCard(
 
 private fun taskStatusLine(
     task: DownloadTaskEntity
-): String {
-    val status = when (task.status) {
+): String =
+    when (task.status) {
         DownloadTaskEntity.STATUS_PENDING ->
             "等待中 · 等待其他任务"
 
@@ -1160,19 +1160,6 @@ private fun taskStatusLine(
                 task.status
             )
     }
-
-    return if (task.totalSize > 0) {
-        // 显示值钳制到 total，避免恢复竞态导致显示超过总大小。
-        val shown = minOf(
-            task.downloadedSize,
-            task.totalSize
-        )
-
-        "$status · ${formatSize(shown)} / ${formatSize(task.totalSize)}"
-    } else {
-        status
-    }
-}
 
 private fun progressText(task: DownloadTaskEntity): String {
     if (task.totalSize <= 0) return ""
