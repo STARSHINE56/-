@@ -8,5 +8,8 @@ internal data class PendingDownload(
     val url: String,
     val fileName: String,
     val size: Long,
-    val headers: Map<String, String>
+    val headers: Map<String, String>,
+    val sourceFileId: String = "",
+    val sourceType: String = "",
+    val sourceContext: String = ""
 )

@@ -241,6 +241,141 @@ fun MainScreen() {
             showSpeedProvider = { settings.notificationShowSpeed }
         )
     }
+    // 临时直链刷新：仅对个人网盘 cloud 来源生效；分享链接来源需要额外会话上下文，暂不自动刷新。
+    downloadManager.sourceRefresher = refresher@{ task ->
+        if (task.sourceType != com.yunx.app.data.download.DownloadSourceType.CLOUD) {
+            return@refresher null
+        }
+
+        when (task.platform) {
+            com.yunx.app.data.download.DownloadPlatform.QUARK -> {
+                val cookie = repository.getFreshCookie() ?: return@refresher null
+                val link = api.getDownloadLink(task.sourceFileId, cookie) ?: return@refresher null
+                com.yunx.app.data.download.CloudDownloadSource(
+                    url = com.yunx.app.data.network.QuarkCdn.fastest(link.downloadUrl, cookie),
+                    fileName = task.fileName,
+                    fileSize = link.size,
+                    headers = mapOf(
+                        "Cookie" to cookie,
+                        "User-Agent" to com.yunx.app.data.network.QuarkConstants.API_USER_AGENT,
+                        "Referer" to com.yunx.app.data.network.QuarkConstants.DOWNLOAD_REFERER
+                    ),
+                    platform = task.platform,
+                    sourceFileId = task.sourceFileId,
+                    sourceType = task.sourceType,
+                    sourceContext = task.sourceContext
+                )
+            }
+
+            com.yunx.app.data.download.DownloadPlatform.UC -> {
+                val cookie = ucRepository.getFreshCookie() ?: return@refresher null
+                val link = ucApi.cloudGetDownloadLink(task.sourceFileId, cookie) ?: return@refresher null
+                com.yunx.app.data.download.CloudDownloadSource(
+                    url = link.downloadUrl,
+                    fileName = task.fileName,
+                    fileSize = link.size,
+                    headers = mapOf(
+                        "Cookie" to cookie,
+                        "User-Agent" to com.yunx.app.data.network.UCConstants.USER_AGENT,
+                        "Referer" to com.yunx.app.data.network.UCConstants.DOWNLOAD_REFERER,
+                        "Origin" to com.yunx.app.data.network.UCConstants.WEB_ORIGIN
+                    ),
+                    platform = task.platform,
+                    sourceFileId = task.sourceFileId,
+                    sourceType = task.sourceType,
+                    sourceContext = task.sourceContext
+                )
+            }
+
+            com.yunx.app.data.download.DownloadPlatform.XUNLEI -> {
+                val account = xunleiRepository.getAccount() ?: return@refresher null
+                val link = xunleiApi.getFileDetail(
+                    task.sourceFileId,
+                    account.accessToken,
+                    account.deviceId,
+                    account.captchaToken
+                ) ?: return@refresher null
+                com.yunx.app.data.download.CloudDownloadSource(
+                    url = link.downloadUrl,
+                    fileName = task.fileName,
+                    fileSize = link.size,
+                    headers = mapOf(
+                        "User-Agent" to com.yunx.app.data.network.XunleiConstants.APP_UA
+                    ),
+                    platform = task.platform,
+                    sourceFileId = task.sourceFileId,
+                    sourceType = task.sourceType,
+                    sourceContext = task.sourceContext
+                )
+            }
+
+            com.yunx.app.data.download.DownloadPlatform.BAIDU -> {
+                val account = baiduRepository.getAccount() ?: return@refresher null
+                val url = baiduApi.locateDownload(task.sourceFileId, account.cookie)
+                com.yunx.app.data.download.CloudDownloadSource(
+                    url = url,
+                    fileName = task.fileName,
+                    fileSize = task.totalSize,
+                    headers = mapOf(
+                        "Cookie" to account.cookie,
+                        "User-Agent" to com.yunx.app.data.network.BaiduConstants.UA_NETDISK
+                    ),
+                    platform = task.platform,
+                    sourceFileId = task.sourceFileId,
+                    sourceType = task.sourceType,
+                    sourceContext = task.sourceContext
+                )
+            }
+
+            com.yunx.app.data.download.DownloadPlatform.C139 -> {
+                val account = c139Repository.getAccount() ?: return@refresher null
+                val link = c139Api.getDownloadUrl(task.sourceFileId, account.cookie) ?: return@refresher null
+                com.yunx.app.data.download.CloudDownloadSource(
+                    url = link.downloadUrl,
+                    fileName = task.fileName,
+                    fileSize = link.size,
+                    headers = mapOf(
+                        "User-Agent" to com.yunx.app.data.network.C139Constants.PC_UA,
+                        "Referer" to "https://yun.139.com/"
+                    ),
+                    platform = task.platform,
+                    sourceFileId = task.sourceFileId,
+                    sourceType = task.sourceType,
+                    sourceContext = task.sourceContext
+                )
+            }
+
+            com.yunx.app.data.download.DownloadPlatform.PAN123 -> {
+                if (task.sourceContext.isBlank()) return@refresher null
+                val account = pan123Repository.getAccount() ?: return@refresher null
+                val file = com.yunx.app.data.network.model.ShareFile(
+                    fid = task.sourceFileId,
+                    fname = task.fileName.substringAfterLast('/'),
+                    fsize = task.totalSize,
+                    isdir = false,
+                    pdirFid = "",
+                    fidToken = task.sourceContext
+                )
+                val link = pan123Api.getDownloadLink(file, account.accessToken) ?: return@refresher null
+                com.yunx.app.data.download.CloudDownloadSource(
+                    url = link.downloadUrl,
+                    fileName = task.fileName,
+                    fileSize = link.size,
+                    headers = mapOf(
+                        "User-Agent" to com.yunx.app.data.network.Pan123Constants.WEB_UA,
+                        "Referer" to com.yunx.app.data.network.Pan123Constants.DOWNLOAD_REFERER
+                    ),
+                    platform = task.platform,
+                    sourceFileId = task.sourceFileId,
+                    sourceType = task.sourceType,
+                    sourceContext = task.sourceContext
+                )
+            }
+
+            else -> null
+        }
+    }
+
     // Android 9- 写公共 Download 需要 WRITE_EXTERNAL_STORAGE 运行时授权：
     // 下载完成保存前由 DownloadManager.storagePermissionProvider 触发动态申请，授权后自动继续保存
     var pendingStoragePermission by remember { mutableStateOf<CompletableDeferred<Boolean>?>(null) }

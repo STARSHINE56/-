@@ -137,6 +137,9 @@ class DownloadManager(
      */
     var storagePermissionProvider: suspend () -> Boolean = { true }
 
+    /** 临时下载直链刷新器：仅使用任务持久化的合法来源身份重新调用对应网盘 API。 */
+    var sourceRefresher: DownloadSourceRefresher = { null }
+
     /**
      * 运行中的任务 Job：value 为 CompletableDeferred，注册/移除全程由 jobsLock 保护，
      * 保证 start/pause/remove 之间无 TOCTOU 竞态（防止"暂停/删除瞬间任务继续跑"）。
@@ -240,6 +243,12 @@ class DownloadManager(
         size: Long = -1L,
         /** 下载来源平台标识（按平台应用下载线程数设置）；通用/手动添加传空串 */
         platform: String = "",
+        sourceFileId: String = "",
+        sourceType: String = "",
+        sourceContext: String = "",
+        urlExpiresAt: Long = 0L,
+        etag: String = "",
+        lastModified: String = "",
         /** 下载成功完成后的清理回调（如删除网盘临时转存文件）；失败/取消不触发 */
         onComplete: suspend () -> Unit = {}
     ): Long {
@@ -254,7 +263,13 @@ class DownloadManager(
                 url = url,
                 fileName = safeName,
                 requestHeadersJson = encodeHeaders(headers),
-                platform = platform
+                platform = platform,
+                sourceFileId = sourceFileId,
+                sourceType = sourceType,
+                sourceContext = sourceContext,
+                urlExpiresAt = urlExpiresAt,
+                etag = etag,
+                lastModified = lastModified
             )
         )
         // 保存请求头（Cookie/UA），暂停后恢复仍需携带
@@ -265,6 +280,24 @@ class DownloadManager(
         return id
     }
 
+    suspend fun enqueue(
+        source: CloudDownloadSource,
+        onComplete: suspend () -> Unit = {}
+    ): Long = enqueue(
+        url = source.url,
+        fileName = source.fileName,
+        headers = source.headers,
+        size = source.fileSize,
+        platform = source.platform,
+        sourceFileId = source.sourceFileId,
+        sourceType = source.sourceType,
+        sourceContext = source.sourceContext,
+        urlExpiresAt = source.urlExpiresAt,
+        etag = source.etag,
+        lastModified = source.lastModified,
+        onComplete = onComplete
+    )
+
     /**
      * 重新下载：用原直链新建任务（任务卡长按菜单「重新下载」）。
      * 先做 Range 探测校验直链有效性：403/404/网络错误视为直链已过期，返回 false 由 UI 提示。
@@ -274,7 +307,19 @@ class DownloadManager(
         val headers = loadPersistedHeaders(id)
         val valid = runCatching { downloader.getTotalSize(task.url, headers) != null }.getOrDefault(false)
         if (!valid) return false
-        enqueue(task.url, task.fileName, headers, task.totalSize, task.platform)
+        enqueue(
+            url = task.url,
+            fileName = task.fileName,
+            headers = headers,
+            size = task.totalSize,
+            platform = task.platform,
+            sourceFileId = task.sourceFileId,
+            sourceType = task.sourceType,
+            sourceContext = task.sourceContext,
+            urlExpiresAt = task.urlExpiresAt,
+            etag = task.etag,
+            lastModified = task.lastModified
+        )
         return true
     }
 
@@ -387,6 +432,7 @@ class DownloadManager(
         val deferred = synchronized(jobsLock) { activeJobs.remove(id) }
         _stats.update { it - id }
         scope.launch {
+            dao.updateManualPaused(id, true)
             // 等协程真正退出（确保没有半截写入）后，以磁盘 part/seg 真实大小为准回写进度：
             // 暂停瞬间最后一次 onBytes 可能被取消丢弃，DB 落后于磁盘 → 恢复时进度回跳
             deferred?.let { runCatching { it.await().cancelAndJoin() } }
@@ -482,6 +528,7 @@ class DownloadManager(
      */
     private suspend fun runTaskWithRetry(id: Long, headers: Map<String, String>) {
         var attempts = 0
+        var currentHeaders = headers
         val maxRetries = retryCountProvider().coerceIn(0, 10)
         while (true) {
             // 并发许可：排队等待，直到有空闲下载槽位（或任务被暂停/取消）
@@ -490,11 +537,31 @@ class DownloadManager(
             activeDownloads.incrementAndGet()
             try {
                 try {
-                    runTask(id, headers)
+                    val taskBeforeRun = dao.get(id)
+                    if (
+                        taskBeforeRun != null &&
+                        taskBeforeRun.urlExpiresAt > 0L &&
+                        System.currentTimeMillis() >= taskBeforeRun.urlExpiresAt &&
+                        tryRefreshSource(id, "expiresAt")
+                    ) {
+                        currentHeaders = loadPersistedHeaders(id)
+                    }
+                    runTask(id, currentHeaders)
                     return
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    val expiredStatus = downloader.consumeSourceExpiryFailure(id)
+                    if (
+                        expiredStatus != null &&
+                        isTaskActive() &&
+                        tryRefreshSource(id, "HTTP $expiredStatus")
+                    ) {
+                        currentHeaders = loadPersistedHeaders(id)
+                        attempts = 0
+                        Log.d(TAG, "runTaskWithRetry: id=$id 已刷新临时直链，保留分片继续下载")
+                        continue
+                    }
                     attempts++
                     if (isTaskActive() && attempts <= maxRetries) {
                         Log.d(TAG, "runTaskWithRetry: id=$id 失败，自动重试 $attempts/$maxRetries：${e.message}")
@@ -508,6 +575,46 @@ class DownloadManager(
                 activeDownloads.decrementAndGet()
             }
         }
+    }
+
+    private suspend fun tryRefreshSource(id: Long, reason: String): Boolean {
+        val task = dao.get(id) ?: return false
+        if (task.sourceType != DownloadSourceType.CLOUD) return false
+        if (task.sourceFileId.isBlank()) return false
+        if (task.refreshCount >= DownloadSourceRefreshPolicy.MAX_REFRESH_COUNT) {
+            Log.w(TAG, "refreshSource: id=$id 已达到刷新上限 ${task.refreshCount}")
+            return false
+        }
+
+        val refreshed = runCatching { sourceRefresher(task) }
+            .onFailure { Log.w(TAG, "refreshSource: id=$id 重新取链失败：${it.message}") }
+            .getOrNull()
+            ?: return false
+
+        if (refreshed.url.isBlank()) return false
+
+        val oldSize = task.totalSize.takeIf { it > 0 }
+        val newSize = refreshed.fileSize.takeIf { it > 0 }
+        if (oldSize != null && newSize != null && oldSize != newSize) {
+            Log.w(TAG, "refreshSource: id=$id 文件大小变化 old=$oldSize new=$newSize，拒绝续传")
+            return false
+        }
+
+        val encryptedHeaders = encodeHeaders(refreshed.headers)
+        dao.updateRefreshedSource(
+            id = id,
+            url = refreshed.url,
+            encryptedHeaders = encryptedHeaders,
+            sourceContext = refreshed.sourceContext.ifBlank { task.sourceContext },
+            urlExpiresAt = refreshed.urlExpiresAt,
+            etag = refreshed.etag,
+            lastModified = refreshed.lastModified
+        )
+        taskHeaders[id] = refreshed.headers
+        if (newSize != null) taskSizes[id] = newSize
+        dao.updateError(id, "")
+        Log.d(TAG, "refreshSource: id=$id reason=$reason count=${task.refreshCount + 1}")
+        return true
     }
 
     private suspend fun runTask(id: Long, headers: Map<String, String>) {

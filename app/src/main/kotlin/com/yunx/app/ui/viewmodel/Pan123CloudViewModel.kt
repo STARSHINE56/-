@@ -293,6 +293,9 @@ class Pan123CloudViewModel(
                             fileName = relPath,
                             size = link.size,
                             platform = DownloadPlatform.PAN123,
+                            sourceFileId = file.fid,
+                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
+                            sourceContext = file.fidToken,
                             headers = downloadHeaders()
                         )
                         okCount++
@@ -335,7 +338,10 @@ class Pan123CloudViewModel(
                     url = link.downloadUrl,
                     fileName = file.fname.ifBlank { link.filename },
                     size = link.size,
-                    headers = downloadHeaders()
+                    headers = downloadHeaders(),
+                    sourceFileId = file.fid,
+                    sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
+                    sourceContext = file.fidToken
                 )
                 downloadLink = link // 弹下载确认弹窗（长按直链可复制）
             } catch (e: Exception) {
@@ -359,6 +365,9 @@ class Pan123CloudViewModel(
                     fileName = pd.fileName,
                     size = pd.size,
                     platform = DownloadPlatform.PAN123,
+                    sourceFileId = pd.sourceFileId,
+                    sourceType = pd.sourceType,
+                    sourceContext = pd.sourceContext,
                     headers = pd.headers
                 )
                 cloudMessage = "已加入下载：${pd.fileName}"
@@ -491,6 +500,9 @@ class Pan123CloudViewModel(
                             fileName = if (relPath.contains('/')) relPath else file.fname.ifBlank { link.filename },
                             size = link.size,
                             platform = DownloadPlatform.PAN123,
+                            sourceFileId = file.fid,
+                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
+                            sourceContext = file.fidToken,
                             headers = downloadHeaders()
                         )
                         okCount++
