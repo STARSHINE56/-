@@ -351,8 +351,6 @@ class UCCoudViewModel(
                             fileName = relPath, // 相对路径：Download/文件夹A/子目录/文件.mp4
                             size = link.size,
                             platform = DownloadPlatform.UC,
-                            sourceFileId = file.fid,
-                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
                             headers = downloadHeaders(cookie)
                         )
                         okCount++
@@ -406,9 +404,7 @@ class UCCoudViewModel(
                         "User-Agent" to UCConstants.USER_AGENT,
                         "Referer" to UCConstants.DOWNLOAD_REFERER,
                         "Origin" to UCConstants.WEB_ORIGIN
-                    ),
-                    sourceFileId = file.fid,
-                    sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD
+                    )
                 )
                 downloadLink = link // 弹下载确认弹窗（长按直链可复制）
             } catch (e: Exception) {
@@ -432,8 +428,6 @@ class UCCoudViewModel(
                     fileName = pd.fileName,
                     size = pd.size,
                     platform = DownloadPlatform.UC,
-                    sourceFileId = pd.sourceFileId,
-                    sourceType = pd.sourceType,
                     headers = pd.headers
                 )
                 cloudMessage = "已加入下载：${pd.fileName}"
@@ -579,8 +573,6 @@ class UCCoudViewModel(
                             fileName = if (relPath.contains('/')) relPath else link.filename.ifBlank { relPath },
                             size = link.size,
                             platform = DownloadPlatform.UC,
-                            sourceFileId = file.fid,
-                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
                             headers = downloadHeaders(cookie)
                         )
                         okCount++
