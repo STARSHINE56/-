@@ -46,9 +46,21 @@ jobs:
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           chmod +x gradlew
 
-      - name: 检查第二批基础
+      - name: 检查并恢复第一、二批基础
         shell: bash
         run: |
+          if [ ! -f app/src/main/kotlin/com/yunx/app/data/download/CloudDownloadSource.kt ] || \
+             ! grep -q "sourceFileId" app/src/main/kotlin/com/yunx/app/data/db/DownloadTaskEntity.kt || \
+             ! grep -q "version = 15" app/src/main/kotlin/com/yunx/app/data/db/AppDatabase.kt; then
+            echo "检测到前两批下载优化已被后续提交覆盖，正在自动恢复第一批..."
+            python3 .github/scripts/apply-download-batch1.py
+
+            echo "继续恢复第二批..."
+            python3 .github/scripts/apply-download-batch2.py
+          else
+            echo "第一、二批基础仍然存在，无需恢复"
+          fi
+
           test -f app/src/main/kotlin/com/yunx/app/data/download/CloudDownloadSource.kt
           grep -q "sourceFileId" app/src/main/kotlin/com/yunx/app/data/db/DownloadTaskEntity.kt
           grep -q "sourceType" app/src/main/kotlin/com/yunx/app/data/db/DownloadTaskEntity.kt
@@ -64,7 +76,9 @@ jobs:
           git diff --check
           git status --short
           git diff --stat
+
           grep -q "version = 16" app/src/main/kotlin/com/yunx/app/data/db/AppDatabase.kt
+          grep -q "sourceContext" app/src/main/kotlin/com/yunx/app/data/db/DownloadTaskEntity.kt
           grep -q "updateRefreshedSource" app/src/main/kotlin/com/yunx/app/data/db/DownloadTaskDao.kt
           grep -q "consumeSourceExpiryFailure" app/src/main/kotlin/com/yunx/app/data/download/ChunkDownloader.kt
           grep -q "sourceRefresher" app/src/main/kotlin/com/yunx/app/data/download/DownloadManager.kt
@@ -96,10 +110,13 @@ jobs:
         run: |
           mkdir -p batch3-result
           cp app/build/outputs/apk/debug/app-debug.apk batch3-result/星辰助手-下载优化第三批-test.apk
+
           cat > batch3-result/REPORT.md <<'EOF'
           # 星辰助手下载优化第三批
 
           本批实现个人网盘下载临时直链自动刷新基础：
+
+          - 自动恢复第一、二批基础，避免后续提交覆盖导致工作流直接失败
           - 识别 HTTP 401 / 403 / 404 / 410
           - HTML 过期/错误页也标记为临时直链失效
           - 根据 platform + sourceFileId 调用当前登录账号的网盘 API 重新取链
@@ -107,11 +124,11 @@ jobs:
           - 123 云盘额外持久化 fidToken 所需 sourceContext
           - 新直链写回 Room，refreshCount 有上限
           - 新旧文件大小不一致时拒绝续传，避免文件损坏
-          - 刷新后不删除已有 part/seg，继续断点下载
+          - 刷新后保留已有 part/seg，继续断点下载
 
           注意：
           - 本批只对 sourceType=cloud 的个人网盘文件自动刷新。
-          - 分享链接 sourceType=share 还缺少完整分享会话上下文，不会冒险自动重建。
+          - 分享链接 sourceType=share 暂不自动重建。
           - 单元测试 / Lint / Debug APK 构建全部通过后才会提交。
           EOF
 
@@ -128,10 +145,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add app/src/main app/src/test
+
           if git diff --cached --quiet; then
             echo "没有需要提交的修改"
             exit 0
           fi
-          git commit -m "feat: refresh expired cloud download URLs"
+
+          git commit -m "feat: restore download metadata and refresh expired cloud URLs"
           git push origin HEAD:main
