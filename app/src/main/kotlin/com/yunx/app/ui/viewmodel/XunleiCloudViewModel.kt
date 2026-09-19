@@ -271,8 +271,6 @@ class XunleiCloudViewModel(
                             fileName = relPath, // 相对路径：Download/文件夹A/子目录/文件.mp4
                             size = link.size,
                             platform = DownloadPlatform.XUNLEI,
-                            sourceFileId = file.fid,
-                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
                             headers = downloadHeaders()
                         )
                         okCount++
@@ -316,9 +314,7 @@ class XunleiCloudViewModel(
                     url = link.downloadUrl,
                     fileName = link.filename.ifBlank { file.fname },
                     size = link.size,
-                    headers = mapOf("User-Agent" to XunleiConstants.APP_UA),
-                    sourceFileId = file.fid,
-                    sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD
+                    headers = mapOf("User-Agent" to XunleiConstants.APP_UA)
                 )
                 downloadLink = link // 弹下载确认弹窗（长按直链可复制）
             } catch (e: Exception) {
@@ -342,8 +338,6 @@ class XunleiCloudViewModel(
                     fileName = pd.fileName,
                     size = pd.size,
                     platform = DownloadPlatform.XUNLEI,
-                    sourceFileId = pd.sourceFileId,
-                    sourceType = pd.sourceType,
                     headers = pd.headers
                 )
                 cloudMessage = "已加入下载：${pd.fileName}"
@@ -490,8 +484,6 @@ class XunleiCloudViewModel(
                             fileName = if (relPath.contains('/')) relPath else link.filename.ifBlank { relPath },
                             size = link.size,
                             platform = DownloadPlatform.XUNLEI,
-                            sourceFileId = file.fid,
-                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
                             headers = downloadHeaders()
                         )
                         okCount++
