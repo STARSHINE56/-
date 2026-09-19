@@ -322,7 +322,7 @@ private fun DownloadBatchBar(
             .fillMaxWidth()
             .padding(
                 horizontal = 12.dp,
-                vertical = 2.dp
+                vertical = 0.dp
             )
     ) {
         Row(
@@ -575,7 +575,7 @@ private fun EmptyDownloadState(modifier: Modifier = Modifier) {
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "解析分享后点击文件即可加入下载队列\n也可点击右下角按钮手动添加",
+            text = "解析文件后可直接加入下载\n也可点击右下角手动添加任务",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
@@ -965,7 +965,7 @@ private fun DownloadTaskCard(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         )
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(40.dp),
@@ -992,9 +992,31 @@ private fun DownloadTaskCard(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = stats?.phase?.takeIf { it.isNotBlank() } ?: taskStatusLine(task),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = buildString {
+                            val phase = stats?.phase?.takeIf { it.isNotBlank() }
+                                ?: taskStatusLine(task)
+                            append(phase)
+
+                            if (isDownloading && stats != null && stats.speed > 0) {
+                                append(" · ")
+                                append(formatSpeed(stats.speed))
+                                if (stats.remainMillis >= 0) {
+                                    append(" · 剩余 ")
+                                    append(formatRemain(stats.remainMillis))
+                                }
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = when (task.status) {
+                            DownloadTaskEntity.STATUS_FAILED ->
+                                MaterialTheme.colorScheme.error
+                            DownloadTaskEntity.STATUS_COMPLETED ->
+                                MaterialTheme.colorScheme.secondary
+                            else ->
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 // 主操作按钮
@@ -1050,17 +1072,6 @@ private fun DownloadTaskCard(
                 exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
             ) {
                 Column {
-                    if (isDownloading && stats != null && stats.speed > 0) {
-                        Text(
-                            text = buildString {
-                                if (stats.phase.isNotBlank()) append("${stats.phase} · ")
-                                append("${formatSpeed(stats.speed)} · 剩余 ${formatRemain(stats.remainMillis)} · ${stats.chunkCount} 线程")
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                    }
                     LinearProgressIndicator(
                         progress = { fraction },
                         modifier = Modifier.fillMaxWidth(),
@@ -1080,11 +1091,7 @@ private fun DownloadTaskCard(
             ) {
                 Text(
                     text = if (task.status == DownloadTaskEntity.STATUS_COMPLETED) {
-                        if (task.avgSpeed > 0) {
-                            "平均 ${formatSpeed(task.avgSpeed)} · ${formatSize(task.totalSize)}"
-                        } else {
-                            formatSize(task.totalSize)
-                        }
+                        "已完成 · ${formatSize(task.totalSize)}"
                     } else {
                         progressText(task)
                     },
@@ -1092,16 +1099,6 @@ private fun DownloadTaskCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
-                TextButton(onClick = onRemove) {
-                    Icon(
-                        imageVector = Icons.Outlined.Delete,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("删除", color = MaterialTheme.colorScheme.error)
-                }
             }
         }
 

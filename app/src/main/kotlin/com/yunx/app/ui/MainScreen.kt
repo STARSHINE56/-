@@ -719,14 +719,27 @@ fun MainScreen() {
                 )
             },
             actions = {
-                // 解析页标题右上角：收藏网盘链接入口
-                if (currentTab == MainTab.Resolve) {
-                    IconButton(onClick = { showDownloadHistory = true }) {
-                        Icon(Icons.Outlined.History, contentDescription = "下载历史")
+                // 顶部栏只展示与当前页面直接相关的入口，避免解析页按钮过多。
+                when (currentTab) {
+                    MainTab.Resolve -> {
+                        IconButton(onClick = { showBookmarks = true }) {
+                            Icon(
+                                Icons.Outlined.Bookmarks,
+                                contentDescription = "收藏网盘链接"
+                            )
+                        }
                     }
-                    IconButton(onClick = { showBookmarks = true }) {
-                        Icon(Icons.Outlined.Bookmarks, contentDescription = "收藏网盘链接")
+
+                    MainTab.Download -> {
+                        IconButton(onClick = { showDownloadHistory = true }) {
+                            Icon(
+                                Icons.Outlined.History,
+                                contentDescription = "下载历史"
+                            )
+                        }
                     }
+
+                    else -> Unit
                 }
             },
             scrollBehavior = scrollBehavior,

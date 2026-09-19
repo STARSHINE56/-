@@ -316,7 +316,7 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         SettingsItem(
             icon = Icons.Outlined.FolderOpen,
@@ -353,7 +353,7 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         SettingsItem(
             icon = Icons.Outlined.Layers,
@@ -364,7 +364,7 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         SettingsItem(
             icon = Icons.Outlined.Speed,
@@ -375,7 +375,7 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         SettingsItem(
             icon = Icons.Outlined.Refresh,
@@ -390,7 +390,7 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         SettingsItem(
             icon = Icons.Outlined.Wifi,
@@ -412,7 +412,7 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         SettingsItem(
             icon = Icons.Outlined.Power,
@@ -444,7 +444,7 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         SettingsItem(
             icon = Icons.Outlined.Notifications,
@@ -517,7 +517,7 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         SettingsItem(
             icon = Icons.Outlined.Article,
@@ -541,7 +541,7 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         SettingsItem(
             icon = Icons.Outlined.Restore,
@@ -572,7 +572,7 @@ fun SettingsScreen(
             onClick = onAboutClick
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         SettingsItem(
             icon = Icons.Outlined.VolunteerActivism,
@@ -1465,8 +1465,9 @@ private fun OperationLoadingDialog(message: String) {
 private fun SectionLabel(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(
             start = 4.dp,
             bottom = 8.dp
@@ -1505,7 +1506,7 @@ private fun SettingsItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -1515,7 +1516,7 @@ private fun SettingsItem(
             )
 
             Spacer(
-                modifier = Modifier.width(16.dp)
+                modifier = Modifier.width(12.dp)
             )
 
             Column(
@@ -1523,7 +1524,7 @@ private fun SettingsItem(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium
                 )
 
@@ -1533,8 +1534,9 @@ private fun SettingsItem(
 
                 Text(
                     text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
                 )
             }
 

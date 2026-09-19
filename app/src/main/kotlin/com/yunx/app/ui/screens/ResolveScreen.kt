@@ -700,54 +700,43 @@ fun ResolveScreen(
 }
 
     // -----------------------------
-    // 获取下载链接加载弹窗
+    // 获取下载链接：非阻塞式轻量状态提示
     // -----------------------------
 
-    if (
-        viewModel
-            .isFetchingDownloadLink
+    AnimatedVisibility(
+        visible = viewModel.isFetchingDownloadLink,
+        enter = fadeIn(tween(180)),
+        exit = fadeOut(tween(140)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
     ) {
-        AlertDialog(
-            onDismissRequest = { },
-
-            confirmButton = { },
-
-            title = {
-                Text(
-                    "获取下载链接"
+        Card(
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp
                 )
-            },
 
-            text = {
-                Row(
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(
-                        modifier =
-                            Modifier.size(24.dp),
+                Spacer(modifier = Modifier.width(10.dp))
 
-                        strokeWidth =
-                            2.dp
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.width(12.dp)
-                    )
-
-                    Text(
-                        text =
-                            "正在获取下载链接，请稍候…",
-
-                        style =
-                            MaterialTheme
-                                .typography
-                                .bodyMedium
-                    )
-                }
+                Text(
+                    text = "正在获取下载链接…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
             }
-        )
+        }
     }
 
     // -----------------------------
@@ -982,7 +971,7 @@ private fun ResolveInputContent(
                             Modifier
                                 .fillMaxWidth()
                                 .heightIn(
-                                min = 145.dp
+                                min = 128.dp
                             ),
 
                         placeholder = {
@@ -1043,9 +1032,7 @@ private fun ResolveInputContent(
                                     )
                                     .height(36.dp),
                             shape =
-                                RoundedCornerShape(
-                                    12.dp
-                                ),
+                                MaterialTheme.shapes.medium,
                             contentPadding =
                                 PaddingValues(
                                     horizontal = 10.dp,
@@ -1165,9 +1152,7 @@ private fun ResolveInputContent(
                             !isLoading,
 
                     shape =
-                        RoundedCornerShape(
-                            20.dp
-                        )
+                        MaterialTheme.shapes.large
                 ) {
                     if (
                         isLoading
