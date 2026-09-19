@@ -34,7 +34,10 @@ jobs:
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER"             "platform-tools"             "platforms;android-36"             "build-tools;35.0.0"
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0"
 
       - name: 配置构建环境
         shell: bash
@@ -42,6 +45,16 @@ jobs:
           sed -i '/aapt2FromMavenOverride/d' gradle.properties
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           chmod +x gradlew
+
+      - name: 检查并恢复第一批基础
+        shell: bash
+        run: |
+          if [ ! -f app/src/main/kotlin/com/yunx/app/data/download/CloudDownloadSource.kt ]; then
+            echo "检测到第一批下载优化已被后续提交覆盖，正在自动恢复..."
+            python3 .github/scripts/apply-download-batch1.py
+          else
+            echo "第一批基础仍然存在，无需恢复"
+          fi
 
       - name: 应用第二批下载优化
         shell: bash
@@ -54,38 +67,52 @@ jobs:
           git status --short
           git diff --stat
 
+          test -f app/src/main/kotlin/com/yunx/app/data/download/CloudDownloadSource.kt
+          grep -q "sourceFileId" app/src/main/kotlin/com/yunx/app/data/db/DownloadTaskEntity.kt
+          grep -q "version = 15" app/src/main/kotlin/com/yunx/app/data/db/AppDatabase.kt
+          grep -q "sourceFileId = link.fid" app/src/main/kotlin/com/yunx/app/ui/viewmodel/ResolveViewModel.kt
+
       - name: 单元测试
         shell: bash
         run: |
-          ./gradlew --no-daemon --console=plain             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2"             testDebugUnitTest
+          ./gradlew --no-daemon --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            testDebugUnitTest
 
       - name: Android Lint
         shell: bash
         run: |
-          ./gradlew --no-daemon --console=plain             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2"             lintDebug
+          ./gradlew --no-daemon --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            lintDebug
 
       - name: 构建 Debug APK
         shell: bash
         run: |
-          ./gradlew --no-daemon --console=plain             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2"             assembleDebug
+          ./gradlew --no-daemon --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            assembleDebug
 
       - name: 生成结果说明
         shell: bash
         run: |
           mkdir -p batch2-result
           cp app/build/outputs/apk/debug/app-debug.apk batch2-result/星辰助手-下载优化第二批-test.apk
+
           cat > batch2-result/REPORT.md <<'EOF'
           # 星辰助手下载优化第二批
 
-          已自动验证：
+          本次工作流会自动检查第一批下载基础是否存在。
+          如果第一批曾被后续提交覆盖，会先自动恢复，再继续第二批。
+
+          已验证：
+          - 第一批 CloudDownloadSource / sourceFileId / sourceType / Room v15 基础存在
           - 解析页分享下载保存 sourceFileId + sourceType=share
           - 六个网盘页直接下载保存 sourceFileId + sourceType=cloud
-          - 单文件下载确认弹窗不再丢失 fileId
-          - 文件夹下载、批量下载均保存 fileId
-          - 单元测试、Lint、Debug 构建全部通过后才提交
-
-          本批完成下载任务身份链。
-          下一批实现临时直链失效后的受控重新取链与恢复。
+          - 单文件、文件夹、批量下载均保留来源文件 ID
+          - 单元测试通过
+          - Android Lint 通过
+          - Debug APK 构建成功
           EOF
 
       - name: 上传测试结果
@@ -102,12 +129,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add             app/src/main/kotlin/com/yunx/app/data/download/CloudDownloadSource.kt             app/src/main/kotlin/com/yunx/app/ui/viewmodel/PendingDownload.kt             app/src/main/kotlin/com/yunx/app/ui/viewmodel/ResolveViewModel.kt             app/src/main/kotlin/com/yunx/app/ui/viewmodel/QuarkCloudViewModel.kt             app/src/main/kotlin/com/yunx/app/ui/viewmodel/UCCoudViewModel.kt             app/src/main/kotlin/com/yunx/app/ui/viewmodel/XunleiCloudViewModel.kt             app/src/main/kotlin/com/yunx/app/ui/viewmodel/BaiduCloudViewModel.kt             app/src/main/kotlin/com/yunx/app/ui/viewmodel/C139CloudViewModel.kt             app/src/main/kotlin/com/yunx/app/ui/viewmodel/Pan123CloudViewModel.kt             app/src/test/kotlin/com/yunx/app/data/download/DownloadSourceTypeTest.kt
+          git add app/src/main app/src/test
 
           if git diff --cached --quiet; then
             echo "没有需要提交的修改"
             exit 0
           fi
 
-          git commit -m "feat: persist provider file identity for downloads"
+          git commit -m "feat: restore download source metadata and wire provider identity"
           git push origin HEAD:main
