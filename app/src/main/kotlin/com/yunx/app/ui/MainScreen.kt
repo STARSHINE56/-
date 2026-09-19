@@ -376,6 +376,12 @@ fun MainScreen() {
         }
     }
 
+    // App 被系统结束/重启后：恢复上次处于等待或下载中的任务。
+    // sourceRefresher 已在上方配置完成，因此恢复时遇到过期直链仍可安全重新取链。
+    LaunchedEffect(downloadManager) {
+        downloadManager.recoverInterruptedTasks()
+    }
+
     // Android 9- 写公共 Download 需要 WRITE_EXTERNAL_STORAGE 运行时授权：
     // 下载完成保存前由 DownloadManager.storagePermissionProvider 触发动态申请，授权后自动继续保存
     var pendingStoragePermission by remember { mutableStateOf<CompletableDeferred<Boolean>?>(null) }

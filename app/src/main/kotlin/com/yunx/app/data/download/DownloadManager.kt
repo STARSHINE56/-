@@ -1,6 +1,8 @@
 package com.yunx.app.data.download
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import com.yunx.app.util.LogRedactor
 import com.yunx.app.data.db.DownloadTaskDao
@@ -381,7 +383,7 @@ class DownloadManager(
                     if (isTaskActive()) {
                         Log.e(TAG, "task $id failed: ${e.message ?: e.javaClass.simpleName}", e)
                         dao.updateStatus(id, DownloadTaskEntity.STATUS_FAILED)
-                        dao.updateError(id, e.message ?: e.javaClass.simpleName)
+                        dao.updateError(id, DownloadFailurePolicy.userMessage(e))
                     } else {
                         Log.w(TAG, "task $id cancelled: ${e.message}")
                     }
@@ -531,6 +533,56 @@ class DownloadManager(
     /** 当前协程是否仍活跃（暂停/删除触发取消后为 false） */
     private suspend fun isTaskActive(): Boolean = coroutineContext[Job]?.isActive == true
 
+    private fun isNetworkAvailable(): Boolean {
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return true
+        val network = manager.activeNetwork ?: return false
+        val capabilities = manager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    /**
+     * 网络断开时等待系统恢复网络；用户暂停/删除会取消当前协程并立即退出等待。
+     * 等待阶段不消耗失败重试次数。
+     */
+    private suspend fun awaitNetworkIfNeeded(id: Long) {
+        var waiting = false
+        while (isTaskActive() && !isNetworkAvailable()) {
+            if (!waiting) {
+                waiting = true
+                dao.updateError(id, "网络已断开，等待网络恢复…")
+                Log.d(TAG, "networkWait: id=$id waiting")
+            }
+            delay(1000L)
+        }
+        if (waiting && isTaskActive()) {
+            dao.updateError(id, "")
+            Log.d(TAG, "networkWait: id=$id recovered")
+        }
+    }
+
+    /**
+     * App 进程被系统结束后，Room 中可能残留 PENDING / DOWNLOADING。
+     * 再次进入应用时把这些任务恢复到安全状态，并自动续传非手动暂停任务。
+     */
+    suspend fun recoverInterruptedTasks() {
+        val interrupted = dao.getInterruptedTasks()
+        if (interrupted.isEmpty()) return
+        Log.d(TAG, "recoverInterruptedTasks: count=${interrupted.size}")
+        interrupted.forEach { task ->
+            dao.updateProgress(
+                task.id,
+                DownloadTaskEntity.STATUS_PAUSED,
+                task.downloadedSize,
+                task.totalSize
+            )
+        }
+        interrupted
+            .filter { !it.manualPaused }
+            .forEach { task -> start(task.id) }
+    }
+
     /** 等待并发许可：当前下载任务数 >= 上限时轮询等待（暂停/取消可退出等待） */
     private suspend fun awaitConcurrencySlot() {
         val max = concurrencyProvider().coerceAtLeast(1)
@@ -548,6 +600,9 @@ class DownloadManager(
         var currentHeaders = headers
         val maxRetries = retryCountProvider().coerceIn(0, 10)
         while (true) {
+            // 无网络时保持任务并等待；网络恢复后从现有 part/seg 继续，不消耗普通失败重试次数。
+            awaitNetworkIfNeeded(id)
+            if (!isTaskActive()) return
             // 并发许可：排队等待，直到有空闲下载槽位（或任务被暂停/取消）
             awaitConcurrencySlot()
             if (!isTaskActive()) return
@@ -576,6 +631,11 @@ class DownloadManager(
                         currentHeaders = loadPersistedHeaders(id)
                         attempts = 0
                         Log.d(TAG, "runTaskWithRetry: id=$id 已刷新临时直链，保留分片继续下载")
+                        continue
+                    }
+                    if (DownloadFailurePolicy.isNetworkFailure(e) && !isNetworkAvailable()) {
+                        dao.updateError(id, "网络已断开，等待网络恢复…")
+                        Log.d(TAG, "runTaskWithRetry: id=$id 网络断开，等待恢复后续传")
                         continue
                     }
                     attempts++
@@ -659,6 +719,7 @@ class DownloadManager(
             return
         }
         Log.d(TAG, "getTotalSize: id=$id total=$total origin=${LogRedactor.url(task.url)}")
+        ensureTempSpace(total, task.downloadedSize)
         dao.updateProgress(id, DownloadTaskEntity.STATUS_DOWNLOADING, task.downloadedSize, total)
         // 取到大小后再次检查取消（暂停可能发生在 getTotalSize 期间）
         if (!isTaskActive()) return
@@ -1172,6 +1233,48 @@ class DownloadManager(
     /** 下载临时文件缓存根目录：外部缓存（/storage/emulated/0/Android/data/com.yunx.app/cache），
      *  与最终保存目录解耦，系统可自动清理；外部存储不可用时回退内部缓存目录。 */
     private fun cacheBase(): File = context.externalCacheDir ?: context.cacheDir
+
+    /**
+     * 已知文件大小时提前检查临时空间。
+     * 当前下载流程需要保存 part/seg，并在完成阶段生成 merged 文件，所以分别检查两处缓存空间。
+     */
+    private fun ensureTempSpace(total: Long, downloaded: Long) {
+        if (total <= 0L) return
+        val reserve = 64L * 1024 * 1024
+        val remaining = (total - downloaded.coerceAtLeast(0L)).coerceAtLeast(0L)
+        val partBase = cacheBase()
+        val mergedBase = context.cacheDir
+
+        val sameBase = runCatching {
+            partBase.canonicalPath == mergedBase.canonicalPath
+        }.getOrDefault(partBase.absolutePath == mergedBase.absolutePath)
+
+        if (sameBase) {
+            val need = remaining + total + reserve
+            val free = partBase.usableSpace
+            if (free > 0L && free < need) {
+                throw IllegalStateException(
+                    "临时空间不足：至少还需要 ${need - free} 字节可用空间"
+                )
+            }
+        } else {
+            val partNeed = remaining + reserve
+            val partFree = partBase.usableSpace
+            if (partFree > 0L && partFree < partNeed) {
+                throw IllegalStateException(
+                    "下载临时空间不足：至少还需要 ${partNeed - partFree} 字节可用空间"
+                )
+            }
+
+            val mergeNeed = total + reserve
+            val mergeFree = mergedBase.usableSpace
+            if (mergeFree > 0L && mergeFree < mergeNeed) {
+                throw IllegalStateException(
+                    "合并文件临时空间不足：至少还需要 ${mergeNeed - mergeFree} 字节可用空间"
+                )
+            }
+        }
+    }
 
     /** 分片临时文件目录：cacheBase()/download_tmp/$id */
     private fun chunkDirOf(id: Long): File = File(cacheBase(), "download_tmp/$id")
