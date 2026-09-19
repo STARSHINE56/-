@@ -750,9 +750,7 @@ class ResolveViewModel(
             fileName = fileName,
             headers = headers,
             size = link.size,
-            platform = platform,
-            sourceFileId = link.fid,
-            sourceType = com.yunx.app.data.download.DownloadSourceType.SHARE
+            platform = platform
         ) {
             // 下载完成（master 版通过 onComplete 回调）：清理网盘临时转存目录；失败/取消不触发
             val dirFid = link.cleanupDirFid
