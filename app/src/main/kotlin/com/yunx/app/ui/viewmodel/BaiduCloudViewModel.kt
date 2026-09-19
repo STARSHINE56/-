@@ -262,6 +262,8 @@ class BaiduCloudViewModel(
                             fileName = relPath, // 相对路径：Download/文件夹A/子目录/文件.mp4
                             size = file.fsize,
                             platform = DownloadPlatform.BAIDU,
+                            sourceFileId = file.fidToken,
+                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
                             headers = downloadHeaders(cookie)
                         )
                         okCount++
@@ -312,7 +314,9 @@ class BaiduCloudViewModel(
                     headers = mapOf(
                         "Cookie" to cookie(),
                         "User-Agent" to BaiduConstants.UA_NETDISK
-                    )
+                    ),
+                    sourceFileId = file.fidToken,
+                    sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD
                 )
                 downloadLink = link // 弹下载确认弹窗（长按直链可复制）
             } catch (e: Exception) {
@@ -336,6 +340,8 @@ class BaiduCloudViewModel(
                     fileName = pd.fileName,
                     size = pd.size,
                     platform = DownloadPlatform.BAIDU,
+                    sourceFileId = pd.sourceFileId,
+                    sourceType = pd.sourceType,
                     headers = pd.headers
                 )
                 cloudMessage = "已加入下载：${pd.fileName}"
@@ -475,6 +481,8 @@ class BaiduCloudViewModel(
                             fileName = if (relPath.contains('/')) relPath else file.fname,
                             size = file.fsize,
                             platform = DownloadPlatform.BAIDU,
+                            sourceFileId = file.fidToken,
+                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
                             headers = downloadHeaders(cookie)
                         )
                         okCount++
