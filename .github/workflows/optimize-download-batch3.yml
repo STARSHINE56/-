@@ -46,7 +46,7 @@ jobs:
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           chmod +x gradlew
 
-      - name: 恢复被 MT 插件误删的应用图标
+      - name: 恢复被 MT 插件误删的资源文件
         shell: bash
         run: |
           mkdir -p app/src/main/res/drawable
@@ -61,8 +61,14 @@ jobs:
             git show 21b9b079802d:app/src/main/res/drawable/icon2.png > app/src/main/res/drawable/icon2.png
           fi
 
+          if [ ! -f app/src/main/res/drawable/weixin.png ]; then
+            echo "检测到 drawable/weixin.png 缺失，正在从历史提交恢复..."
+            git show 09401ce2bebd:app/src/main/res/drawable/weixin.png > app/src/main/res/drawable/weixin.png
+          fi
+
           test -s app/src/main/res/drawable/icon.png
           test -s app/src/main/res/drawable/icon2.png
+          test -s app/src/main/res/drawable/weixin.png
 
       - name: 检查并恢复第一、二批基础
         shell: bash
