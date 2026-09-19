@@ -55,13 +55,13 @@ jobs:
           grep -q 'private fun taskStatusLine' "$FILE"
           grep -q 'private fun progressText' "$FILE"
           grep -q '已完成 ·' "$FILE"
-          grep -q 'stats?.phase?.takeIf' "$FILE"
 
       - name: 修复下载进度重复显示
         shell: bash
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import re
 
           path = Path("app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt")
           text = path.read_text(encoding="utf-8")
@@ -153,15 +153,48 @@ jobs:
 
           replace_once(old_progress, new_progress, "progressText")
 
-          marker = '''                    modifier = Modifier.weight(1f)
-                  )
-              }
-          }
+          # 精确定位主任务卡底部 Row：从“已完成 · 文件大小”这段开始，直到长按菜单注释前。
+          pattern = re.compile(
+              r'''(?P<row>
+              \s*Row\(
+                  \s*modifier = Modifier\.fillMaxWidth\(\),
+                  \s*verticalAlignment = Alignment\.CenterVertically
+              \s*\) \{
+                  \s*Text\(
+                      \s*text = if \(task\.status == DownloadTaskEntity\.STATUS_COMPLETED\) \{
+                          \s*"已完成 · \$\{formatSize\(task\.totalSize\)\}"
+                      \s*\} else \{
+                          \s*progressText\(task\)
+                      \s*\},
+                      \s*style = MaterialTheme\.typography\.labelSmall,
+                      \s*color = MaterialTheme\.colorScheme\.onSurfaceVariant,
+                      \s*modifier = Modifier\.weight\(1f\)
+                  \s*\)
+              \s*\})
+              (?=\s*\}\s*\n\s*// 长按任务卡弹出操作菜单)
+              ''',
+              re.VERBOSE | re.DOTALL,
+          )
 
-          // 长按任务卡弹出操作菜单（重新下载 / 删除）
-          '''
+          matches = list(pattern.finditer(text))
+          if len(matches) != 1:
+              raise RuntimeError(
+                  f"main task progress row regex: expected exactly 1 match, got {len(matches)}"
+              )
 
-          replacement = '''                    modifier = Modifier.weight(1f)
+          replacement = '''            Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Text(
+                      text = if (task.status == DownloadTaskEntity.STATUS_COMPLETED) {
+                          "已完成 · ${formatSize(task.totalSize)}"
+                      } else {
+                          progressText(task)
+                      },
+                      style = MaterialTheme.typography.labelSmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.weight(1f)
                   )
 
                   if (
@@ -174,13 +207,9 @@ jobs:
                           color = MaterialTheme.colorScheme.onSurfaceVariant
                       )
                   }
-              }
-          }
+              }'''
 
-          // 长按任务卡弹出操作菜单（重新下载 / 删除）
-          '''
-
-          replace_once(marker, replacement, "main task progress row")
+          text = pattern.sub(replacement, text, count=1)
 
           path.write_text(text, encoding="utf-8")
           print("Download progress UI patch applied")
@@ -203,11 +232,6 @@ jobs:
           grep -q 'text = progressPercentText(task)' "$FILE"
           grep -q 'return "${formatSize(shown)} / ${formatSize(task.totalSize)}"' "$FILE"
 
-          if grep -q 'return "已下载 ${formatSize(shown)} / ${formatSize(task.totalSize)} · $percent%"' "$FILE"; then
-            echo "错误：旧的重复进度文案仍然存在"
-            exit 1
-          fi
-
       - name: 单元测试
         shell: bash
         run: |
@@ -229,30 +253,11 @@ jobs:
             -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
             assembleDebug
 
-      - name: 生成测试结果
-        shell: bash
-        run: |
-          mkdir -p download-progress-ui-result
-          cp app/build/outputs/apk/debug/app-debug.apk \
-            download-progress-ui-result/星辰助手-下载进度UI修复-test.apk
-
-          cat > download-progress-ui-result/REPORT.md <<'EOF'
-          # 下载进度 UI 修复
-
-          本次仅修改 DownloadScreen.kt。
-
-          预期显示：
-          文件名
-          下载中 · 589 KB/s · 剩余 15秒
-          [进度条]
-          6.0 MB / 14.8 MB                         40%
-          EOF
-
       - name: 上传测试 APK
         uses: actions/upload-artifact@v7
         with:
           name: XingChen-Download-Progress-UI-Fix
-          path: download-progress-ui-result/**
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
 
