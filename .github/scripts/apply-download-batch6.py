@@ -292,11 +292,20 @@ def patch_manager():
 '''
     replace_once(path, old_stats_update, new_stats_update)
 
-    old_hls_stats = '''        _stats.update { it + (id to DownloadStats(0L, -1L, 1)) }
+    old_single_stats = '''        _stats.update { it + (id to DownloadStats(0L, -1L, 1)) }
 '''
-    new_hls_stats = '''        _stats.update { it + (id to DownloadStats(0L, -1L, 1, "下载中")) }
+    new_single_stats = '''        _stats.update { it + (id to DownloadStats(0L, -1L, 1, "下载中")) }
 '''
-    replace_once(path, old_hls_stats, new_hls_stats)
+    manager_text = path.read_text(encoding="utf-8")
+    single_stats_count = manager_text.count(old_single_stats)
+    if single_stats_count != 2:
+        raise RuntimeError(
+            f"{path}: expected exactly 2 single-stream/HLS stats matches, got {single_stats_count}"
+        )
+    path.write_text(
+        manager_text.replace(old_single_stats, new_single_stats),
+        encoding="utf-8"
+    )
 
     old_finish_start = '''        // 2) 合并
         // ★ 合并产物放内部缓存（data 分区，非 FUSE 挂载）：大文件 IO 快得多；保存完成即删
