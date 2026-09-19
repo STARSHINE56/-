@@ -299,19 +299,32 @@ class DownloadManager(
     )
 
     /**
-     * 重新下载：用原直链新建任务（任务卡长按菜单「重新下载」）。
-     * 先做 Range 探测校验直链有效性：403/404/网络错误视为直链已过期，返回 false 由 UI 提示。
+     * 重新下载：优先复用仍有效的直链；个人网盘直链已失效时自动重新取链后再新建任务。
+     * 分享链接目前缺少完整分享会话上下文，仍保持安全失败，不猜测/绕过来源校验。
      */
     suspend fun redownload(id: Long): Boolean {
-        val task = dao.get(id) ?: return false
-        val headers = loadPersistedHeaders(id)
-        val valid = runCatching { downloader.getTotalSize(task.url, headers) != null }.getOrDefault(false)
-        if (!valid) return false
+        var task = dao.get(id) ?: return false
+        var headers = loadPersistedHeaders(id)
+
+        var probedSize = runCatching { downloader.getTotalSize(task.url, headers) }.getOrNull()
+        if (
+            probedSize == null &&
+            task.sourceType == DownloadSourceType.CLOUD &&
+            task.sourceFileId.isNotBlank() &&
+            tryRefreshSource(id, "redownload")
+        ) {
+            task = dao.get(id) ?: return false
+            headers = loadPersistedHeaders(id)
+            probedSize = runCatching { downloader.getTotalSize(task.url, headers) }.getOrNull()
+        }
+
+        if (probedSize == null) return false
+
         enqueue(
             url = task.url,
             fileName = task.fileName,
             headers = headers,
-            size = task.totalSize,
+            size = probedSize.takeIf { it > 0 } ?: task.totalSize,
             platform = task.platform,
             sourceFileId = task.sourceFileId,
             sourceType = task.sourceType,
@@ -343,6 +356,10 @@ class DownloadManager(
             activeJobs[id] = deferred
             val job = scope.launch {
                 try {
+                    // 用户明确开始/恢复：清除“手动暂停”标志和上一次失败文案。
+                    // 避免恢复后 DB 仍残留 manualPaused=true / 旧 errorMsg。
+                    dao.updateManualPaused(id, false)
+                    dao.updateError(id, "")
                     // 任务开始：有任务在下载时保持前台服务（避免切后台限速/进程被杀）
                     onTaskStarted(id)
                     // 任务级互斥：同一任务串行执行，暂停后立刻恢复不会并发写分片
@@ -540,9 +557,8 @@ class DownloadManager(
                     val taskBeforeRun = dao.get(id)
                     if (
                         taskBeforeRun != null &&
-                        taskBeforeRun.urlExpiresAt > 0L &&
-                        System.currentTimeMillis() >= taskBeforeRun.urlExpiresAt &&
-                        tryRefreshSource(id, "expiresAt")
+                        DownloadSourceRefreshPolicy.shouldRefreshBeforeStart(taskBeforeRun.urlExpiresAt) &&
+                        tryRefreshSource(id, "expiresAt/preemptive")
                     ) {
                         currentHeaders = loadPersistedHeaders(id)
                     }

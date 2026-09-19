@@ -47,7 +47,10 @@ class DownloadViewModel(private val manager: DownloadManager) : ViewModel() {
     fun redownload(task: DownloadTaskEntity) {
         viewModelScope.launch {
             val ok = manager.redownload(task.id)
-            SnackbarController.show(if (ok) "已重新加入下载" else "下载链接已失效，请重新解析后下载")
+            SnackbarController.show(
+                if (ok) "已重新加入下载"
+                else "下载源已失效且无法自动刷新，请重新解析后下载"
+            )
         }
     }
 

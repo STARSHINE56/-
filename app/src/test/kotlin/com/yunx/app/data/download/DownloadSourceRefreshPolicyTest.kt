@@ -20,4 +20,29 @@ class DownloadSourceRefreshPolicyTest {
     fun refreshCountIsBounded() {
         assertTrue(DownloadSourceRefreshPolicy.MAX_REFRESH_COUNT in 1..5)
     }
+
+
+    @Test
+    fun proactivelyRefreshesNearExpiry() {
+        val now = 1_000_000L
+        assertFalse(DownloadSourceRefreshPolicy.shouldRefreshBeforeStart(0L, now))
+        assertFalse(
+            DownloadSourceRefreshPolicy.shouldRefreshBeforeStart(
+                now + DownloadSourceRefreshPolicy.REFRESH_SKEW_MS + 1L,
+                now
+            )
+        )
+        assertTrue(
+            DownloadSourceRefreshPolicy.shouldRefreshBeforeStart(
+                now + DownloadSourceRefreshPolicy.REFRESH_SKEW_MS,
+                now
+            )
+        )
+        assertTrue(
+            DownloadSourceRefreshPolicy.shouldRefreshBeforeStart(
+                now - 1L,
+                now
+            )
+        )
+    }
 }
