@@ -291,8 +291,6 @@ class C139CloudViewModel(
                             fileName = relPath, // 相对路径：Download/文件夹A/子目录/文件.mp4
                             size = link.size,
                             platform = DownloadPlatform.C139,
-                            sourceFileId = file.fid,
-                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
                             headers = downloadHeaders()
                         )
                         okCount++
@@ -339,9 +337,7 @@ class C139CloudViewModel(
                     headers = mapOf(
                         "User-Agent" to C139Constants.PC_UA,
                         "Referer" to "https://yun.139.com/"
-                    ),
-                    sourceFileId = file.fid,
-                    sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD
+                    )
                 )
                 downloadLink = link // 弹下载确认弹窗（长按直链可复制）
             } catch (e: Exception) {
@@ -365,8 +361,6 @@ class C139CloudViewModel(
                     fileName = pd.fileName,
                     size = pd.size,
                     platform = DownloadPlatform.C139,
-                    sourceFileId = pd.sourceFileId,
-                    sourceType = pd.sourceType,
                     headers = pd.headers
                 )
                 cloudMessage = "已加入下载：${pd.fileName}"
@@ -504,8 +498,6 @@ class C139CloudViewModel(
                             fileName = if (relPath.contains('/')) relPath else file.fname.ifBlank { link.filename },
                             size = link.size,
                             platform = DownloadPlatform.C139,
-                            sourceFileId = file.fid,
-                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
                             headers = downloadHeaders()
                         )
                         okCount++
