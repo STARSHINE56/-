@@ -45,44 +45,57 @@ object DownloadSourceType {
 
 def patch_pending():
     path = VM_DIR / "PendingDownload.kt"
-    replace_once(
-        path,
-        """internal data class PendingDownload(
-    val url: String,
-    val fileName: String,
-    val size: Long,
-    val headers: Map<String, String>
-)
-""",
-        """internal data class PendingDownload(
-    val url: String,
-    val fileName: String,
-    val size: Long,
-    val headers: Map<String, String>,
-    val sourceFileId: String = "",
-    val sourceType: String = ""
-)
-"""
+    text = path.read_text(encoding="utf-8")
+
+    if "val sourceFileId:" in text:
+        return
+
+    pattern = re.compile(
+        r"(internal data class PendingDownload\(\s*"
+        r"val url: String,\s*"
+        r"val fileName: String,\s*"
+        r"val size: Long,\s*)"
+        r"val headers: Map<String, String>"
+        r"(\s*\))",
+        re.DOTALL,
     )
 
+    new_text, count = pattern.subn(
+        r"\1val headers: Map<String, String>,\n"
+        r"    val sourceFileId: String = \"\",\n"
+        r"    val sourceType: String = \"\"\2",
+        text,
+        count=1,
+    )
+    if count != 1:
+        raise RuntimeError(f"{path}: PendingDownload model patch failed")
+    path.write_text(new_text, encoding="utf-8")
+
 def add_pending_identity(text: str, filename: str) -> str:
-    pattern = re.compile(r"pendingDownload = PendingDownload\(\n(?P<body>.*?)\n\s{16}\)", re.DOTALL)
+    pattern = re.compile(
+        r"pendingDownload = PendingDownload\(\n(?P<body>.*?)\n\s{16}\)",
+        re.DOTALL,
+    )
     matches = list(pattern.finditer(text))
     if len(matches) != 1:
         raise RuntimeError(f"{filename}: PendingDownload constructor count={len(matches)}")
+
     m = matches[0]
     body = m.group("body")
     if "sourceFileId =" in body:
         return text
+
     lines = body.splitlines()
-    for i in range(len(lines)-1, -1, -1):
+    for i in range(len(lines) - 1, -1, -1):
         if lines[i].strip():
             lines[i] = lines[i].rstrip()
             if not lines[i].endswith(","):
                 lines[i] += ","
             break
+
     lines.append("                    sourceFileId = file.fid,")
     lines.append("                    sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD")
+
     new_body = "\n".join(lines)
     return text[:m.start("body")] + new_body + text[m.end("body"):]
 
@@ -100,20 +113,27 @@ def patch_cloud_vm(path: Path):
                     headers = pd.headers
 """
     if text.count(single_old) != 1:
-        raise RuntimeError(f"{path.name}: single-file enqueue count={text.count(single_old)}")
+        raise RuntimeError(
+            f"{path.name}: single-file enqueue count={text.count(single_old)}"
+        )
     text = text.replace(single_old, single_new, 1)
 
     pattern = re.compile(
-        rf"(platform = DownloadPlatform\.{platform},\n)(\s+headers = downloadHeaders(?:\([^\n]*\)|\(\)))"
+        rf"(platform = DownloadPlatform\.{platform},\n)"
+        rf"(\s+headers = downloadHeaders(?:\([^\n]*\)|\(\)))"
     )
-    hits = list(pattern.finditer(text))
-    if len(hits) != 2:
-        raise RuntimeError(f"{path.name}: folder/batch enqueue count={len(hits)}")
+    matches = list(pattern.finditer(text))
+    if len(matches) != 2:
+        raise RuntimeError(
+            f"{path.name}: folder/batch enqueue count={len(matches)}"
+        )
+
     text = pattern.sub(
-        r"\1                            sourceFileId = file.fid,\n"
+        r"\1"
+        r"                            sourceFileId = file.fid,\n"
         r"                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,\n"
         r"\2",
-        text
+        text,
     )
 
     if text.count("sourceFileId =") < 4:
@@ -123,23 +143,31 @@ def patch_cloud_vm(path: Path):
 
 def patch_resolve():
     path = VM_DIR / "ResolveViewModel.kt"
-    replace_once(
-        path,
-        """            size = link.size,
+    text = path.read_text(encoding="utf-8")
+
+    if "sourceFileId = link.fid" in text:
+        return
+
+    old = """            size = link.size,
             platform = platform
         ) {
-""",
-        """            size = link.size,
+"""
+    new = """            size = link.size,
             platform = platform,
             sourceFileId = link.fid,
             sourceType = com.yunx.app.data.download.DownloadSourceType.SHARE
         ) {
 """
-    )
+    if text.count(old) != 1:
+        raise RuntimeError(
+            f"{path}: ResolveViewModel enqueue patch count={text.count(old)}"
+        )
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 def add_test():
     test_dir = ROOT / "app/src/test/kotlin/com/yunx/app/data/download"
     test_dir.mkdir(parents=True, exist_ok=True)
+
     (test_dir / "DownloadSourceTypeTest.kt").write_text(
         """package com.yunx.app.data.download
 
@@ -168,17 +196,20 @@ class DownloadSourceTypeTest {
     }
 }
 """,
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
 def main():
     patch_source_type()
     patch_pending()
-    for p in CLOUD_VM_FILES:
-        patch_cloud_vm(p)
+
+    for path in CLOUD_VM_FILES:
+        patch_cloud_vm(path)
+
     patch_resolve()
     add_test()
-    print("download batch2 identity wiring applied")
+
+    print("download batch2 identity wiring applied successfully")
 
 if __name__ == "__main__":
     main()
