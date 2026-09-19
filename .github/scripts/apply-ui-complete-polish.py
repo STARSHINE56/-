@@ -242,12 +242,18 @@ def patch_settings_screen():
 
     replace_once(
         path,
-        '''                    style = MaterialTheme.typography.bodyMedium,
+        '''                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 ''',
-        '''                    style = MaterialTheme.typography.bodySmall,
+        '''                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2
+                )
 ''',
         "settings description typography"
     )
