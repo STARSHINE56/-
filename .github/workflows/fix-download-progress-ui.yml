@@ -1,0 +1,316 @@
+name: 修复下载进度重复显示
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  YUNX_USE_MIRROR: "false"
+
+jobs:
+  fix-download-progress-ui:
+    name: 修复下载进度重复 UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: 安装 Android SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0"
+
+      - name: 配置构建环境
+        shell: bash
+        run: |
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+
+      - name: 检查当前 UI 基线
+        shell: bash
+        run: |
+          FILE="app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt"
+          test -f "$FILE"
+          grep -q 'private fun DownloadTaskCard' "$FILE"
+          grep -q 'private fun taskStatusLine' "$FILE"
+          grep -q 'private fun progressText' "$FILE"
+          grep -q '已完成 ·' "$FILE"
+          grep -q 'stats?.phase?.takeIf' "$FILE"
+
+      - name: 修复下载进度重复显示
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(
+                      f"{label}: expected exactly 1 match, got {count}"
+                  )
+              text = text.replace(old, new, 1)
+
+          old_status_line = '''private fun taskStatusLine(
+              task: DownloadTaskEntity
+          ): String {
+              val status = when (task.status) {
+                  DownloadTaskEntity.STATUS_PENDING ->
+                      "等待中 · 等待其他任务"
+
+                  DownloadTaskEntity.STATUS_PAUSED ->
+                      "已暂停"
+
+                  DownloadTaskEntity.STATUS_FAILED ->
+                      "失败"
+
+                  else ->
+                      DownloadTaskEntity.statusText(
+                          task.status
+                      )
+              }
+
+              return if (task.totalSize > 0) {
+                  // 显示值钳制到 total，避免恢复竞态导致显示超过总大小。
+                  val shown = minOf(
+                      task.downloadedSize,
+                      task.totalSize
+                  )
+
+                  "$status · ${formatSize(shown)} / ${formatSize(task.totalSize)}"
+              } else {
+                  status
+              }
+          }
+          '''
+
+          new_status_line = '''private fun taskStatusLine(
+              task: DownloadTaskEntity
+          ): String =
+              when (task.status) {
+                  DownloadTaskEntity.STATUS_PENDING ->
+                      "等待中 · 等待其他任务"
+
+                  DownloadTaskEntity.STATUS_PAUSED ->
+                      "已暂停"
+
+                  DownloadTaskEntity.STATUS_FAILED ->
+                      "失败"
+
+                  else ->
+                      DownloadTaskEntity.statusText(
+                          task.status
+                      )
+              }
+          '''
+
+          replace_once(
+              old_status_line,
+              new_status_line,
+              "taskStatusLine"
+          )
+
+          old_progress = '''private fun progressText(task: DownloadTaskEntity): String {
+              if (task.totalSize <= 0) return ""
+              // 显示值钳制到 total（防恢复竞态残留导致显示超总大小）
+              val shown = minOf(task.downloadedSize, task.totalSize)
+              val percent = (shown * 100 / task.totalSize).toInt().coerceIn(0, 100)
+              return "已下载 ${formatSize(shown)} / ${formatSize(task.totalSize)} · $percent%"
+          }
+          '''
+
+          new_progress = '''private fun progressText(task: DownloadTaskEntity): String {
+              if (task.totalSize <= 0) return ""
+              // 显示值钳制到 total（防恢复竞态残留导致显示超总大小）
+              val shown = minOf(task.downloadedSize, task.totalSize)
+              return "${formatSize(shown)} / ${formatSize(task.totalSize)}"
+          }
+
+          private fun progressPercentText(task: DownloadTaskEntity): String {
+              if (task.totalSize <= 0) return ""
+              val shown = minOf(task.downloadedSize, task.totalSize)
+              val percent = (shown * 100 / task.totalSize).toInt().coerceIn(0, 100)
+              return "$percent%"
+          }
+          '''
+
+          replace_once(
+              old_progress,
+              new_progress,
+              "progressText"
+          )
+
+          old_bottom = '''            Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Text(
+                      text = if (task.status == DownloadTaskEntity.STATUS_COMPLETED) {
+                          "已完成 · ${formatSize(task.totalSize)}"
+                      } else {
+                          progressText(task)
+                      },
+                      style = MaterialTheme.typography.labelSmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.weight(1f)
+                  )
+              }
+          '''
+
+          new_bottom = '''            Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Text(
+                      text = if (task.status == DownloadTaskEntity.STATUS_COMPLETED) {
+                          "已完成 · ${formatSize(task.totalSize)}"
+                      } else {
+                          progressText(task)
+                      },
+                      style = MaterialTheme.typography.labelSmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.weight(1f)
+                  )
+
+                  if (
+                      task.status != DownloadTaskEntity.STATUS_COMPLETED &&
+                      task.totalSize > 0
+                  ) {
+                      Text(
+                          text = progressPercentText(task),
+                          style = MaterialTheme.typography.labelSmall,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant
+                      )
+                  }
+              }
+          '''
+
+          replace_once(
+              old_bottom,
+              new_bottom,
+              "main task progress row"
+          )
+
+          path.write_text(text, encoding="utf-8")
+          print("Download progress UI patch applied")
+          PY
+
+      - name: 检查修改范围
+        shell: bash
+        run: |
+          git diff --check
+
+          CHANGED="$(git diff --name-only)"
+          echo "$CHANGED"
+
+          if [ "$CHANGED" != "app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt" ]; then
+            echo "错误：本工作流只允许修改 DownloadScreen.kt"
+            exit 1
+          fi
+
+          FILE="app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt"
+          grep -q 'private fun progressPercentText' "$FILE"
+          grep -q 'return "${formatSize(shown)} / ${formatSize(task.totalSize)}"' "$FILE"
+
+          if grep -q 'return "已下载 ${formatSize(shown)} / ${formatSize(task.totalSize)} · $percent%"' "$FILE"; then
+            echo "错误：旧的重复进度文案仍然存在"
+            exit 1
+          fi
+
+      - name: 单元测试
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            testDebugUnitTest
+
+      - name: Android Lint
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            lintDebug
+
+      - name: 构建 Debug APK
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --console=plain \
+            -Pandroid.aapt2FromMavenOverride="$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            assembleDebug
+
+      - name: 生成测试结果
+        shell: bash
+        run: |
+          mkdir -p download-progress-ui-result
+
+          cp app/build/outputs/apk/debug/app-debug.apk \
+            download-progress-ui-result/星辰助手-下载进度UI修复-test.apk
+
+          cat > download-progress-ui-result/REPORT.md <<'EOF'
+          # 下载进度 UI 修复
+
+          本次仅修改 DownloadScreen.kt，不修改下载核心、数据库或网盘 API。
+
+          修复内容：
+          - 状态行不再重复显示“已下载大小 / 总大小”
+          - 状态行只显示下载状态、速度和剩余时间
+          - 进度条下方左侧显示“已下载大小 / 总大小”
+          - 进度条下方右侧单独显示百分比
+          - 完成任务仍显示“已完成 · 文件大小”
+          - 文件夹子任务使用同一状态函数，也会同步减少重复信息
+
+          预期效果：
+
+          文件名
+          下载中 · 589 KB/s · 剩余 15秒
+          [进度条]
+          6.0 MB / 14.8 MB                         40%
+          EOF
+
+      - name: 上传测试 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: XingChen-Download-Progress-UI-Fix
+          path: download-progress-ui-result/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 提交修改
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add app/src/main/kotlin/com/yunx/app/ui/screens/DownloadScreen.kt
+
+          if git diff --cached --quiet; then
+            echo "没有需要提交的修改"
+            exit 0
+          fi
+
+          git commit -m "fix: remove duplicated download progress UI"
+          git push origin HEAD:main
