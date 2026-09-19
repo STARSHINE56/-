@@ -22,6 +22,15 @@ PLATFORM_BY_FILE = {
     "Pan123CloudViewModel.kt": "PAN123",
 }
 
+SOURCE_ID_BY_FILE = {
+    "QuarkCloudViewModel.kt": "file.fid",
+    "UCCoudViewModel.kt": "file.fid",
+    "XunleiCloudViewModel.kt": "file.fid",
+    "BaiduCloudViewModel.kt": "file.fidToken",
+    "C139CloudViewModel.kt": "file.fid",
+    "Pan123CloudViewModel.kt": "file.fid",
+}
+
 def replace_once(path: Path, old: str, new: str):
     text = path.read_text(encoding="utf-8")
     count = text.count(old)
@@ -45,31 +54,24 @@ object DownloadSourceType {
 
 def patch_pending():
     path = VM_DIR / "PendingDownload.kt"
-    text = path.read_text(encoding="utf-8")
+    path.write_text(
+        """package com.yunx.app.ui.viewmodel
 
-    if "val sourceFileId:" in text:
-        return
-
-    pattern = re.compile(
-        r"(internal data class PendingDownload\(\s*"
-        r"val url: String,\s*"
-        r"val fileName: String,\s*"
-        r"val size: Long,\s*)"
-        r"val headers: Map<String, String>"
-        r"(\s*\))",
-        re.DOTALL,
+/**
+ * 待确认下载参数：网盘页「单文件下载」先弹下载确认弹窗（对齐解析页行为），
+ * 用户点「开始下载」后再用本数据入队。
+ */
+internal data class PendingDownload(
+    val url: String,
+    val fileName: String,
+    val size: Long,
+    val headers: Map<String, String>,
+    val sourceFileId: String = "",
+    val sourceType: String = ""
+)
+""",
+        encoding="utf-8",
     )
-
-    new_text, count = pattern.subn(
-        r"\1val headers: Map<String, String>,\n"
-        r"    val sourceFileId: String = \"\",\n"
-        r"    val sourceType: String = \"\"\2",
-        text,
-        count=1,
-    )
-    if count != 1:
-        raise RuntimeError(f"{path}: PendingDownload model patch failed")
-    path.write_text(new_text, encoding="utf-8")
 
 def add_pending_identity(text: str, filename: str) -> str:
     pattern = re.compile(
@@ -85,7 +87,9 @@ def add_pending_identity(text: str, filename: str) -> str:
     if "sourceFileId =" in body:
         return text
 
+    source_expr = SOURCE_ID_BY_FILE[filename]
     lines = body.splitlines()
+
     for i in range(len(lines) - 1, -1, -1):
         if lines[i].strip():
             lines[i] = lines[i].rstrip()
@@ -93,7 +97,7 @@ def add_pending_identity(text: str, filename: str) -> str:
                 lines[i] += ","
             break
 
-    lines.append("                    sourceFileId = file.fid,")
+    lines.append(f"                    sourceFileId = {source_expr},")
     lines.append("                    sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD")
 
     new_body = "\n".join(lines)
@@ -101,7 +105,9 @@ def add_pending_identity(text: str, filename: str) -> str:
 
 def patch_cloud_vm(path: Path):
     platform = PLATFORM_BY_FILE[path.name]
+    source_expr = SOURCE_ID_BY_FILE[path.name]
     text = path.read_text(encoding="utf-8")
+
     text = add_pending_identity(text, path.name)
 
     single_old = f"""                    platform = DownloadPlatform.{platform},
@@ -128,13 +134,16 @@ def patch_cloud_vm(path: Path):
             f"{path.name}: folder/batch enqueue count={len(matches)}"
         )
 
-    text = pattern.sub(
-        r"\1"
-        r"                            sourceFileId = file.fid,\n"
-        r"                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,\n"
-        r"\2",
-        text,
-    )
+    def repl(match):
+        indent = "                            "
+        return (
+            match.group(1)
+            + f"{indent}sourceFileId = {source_expr},\n"
+            + f"{indent}sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,\n"
+            + match.group(2)
+        )
+
+    text = pattern.sub(repl, text)
 
     if text.count("sourceFileId =") < 4:
         raise RuntimeError(f"{path.name}: incomplete source identity wiring")
@@ -199,6 +208,15 @@ class DownloadSourceTypeTest {
         encoding="utf-8",
     )
 
+def validate():
+    pending = (VM_DIR / "PendingDownload.kt").read_text(encoding="utf-8")
+    if '\\"' in pending:
+        raise RuntimeError("PendingDownload.kt contains escaped quote corruption")
+
+    baidu = (VM_DIR / "BaiduCloudViewModel.kt").read_text(encoding="utf-8")
+    if "sourceFileId = file.fid," in baidu:
+        raise RuntimeError("Baidu source identity must use fidToken")
+
 def main():
     patch_source_type()
     patch_pending()
@@ -208,8 +226,9 @@ def main():
 
     patch_resolve()
     add_test()
+    validate()
 
-    print("download batch2 identity wiring applied successfully")
+    print("download batch2 v2 identity wiring applied successfully")
 
 if __name__ == "__main__":
     main()
